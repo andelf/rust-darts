@@ -29,7 +29,7 @@ pub struct DoubleArrayTrieBuilder<'a> {
     key_size: usize,
 
     keys: &'a [&'a str],           // use usize as key
-    values: Vec<usize>,          // values
+//    values: Vec<usize>,          // values
 
     next_check_pos: usize,
     progress: usize,
@@ -46,7 +46,7 @@ impl<'a> DoubleArrayTrieBuilder<'a>  {
             alloc_size: 0,
             key_size: 0,
             keys: &[],
-            values: vec![],
+//            values: vec![],
             next_check_pos: 0,
             progress: 0,
             progress_func: None
@@ -268,11 +268,6 @@ mod tests {
 
     #[test]
     fn test_double_array_trie() {
-        let mut strs = vec![
-            "he", "she", "his", "hers",
-            "一举", "一举一动", "一举成名", "一举成名天下知", "万能", "万能胶"
-        ];
-
         let f = File::open("./priv/dict.txt.big").unwrap();
 
         let keys: Vec<String> = BufReader::new(f)
@@ -280,13 +275,12 @@ mod tests {
             .map(|s| s.unwrap())
             .collect();
 
-        let mut strs: Vec<&str> = keys.iter()
+        let strs: Vec<&str> = keys.iter()
             .map(|n| n.split(' ').next().unwrap())
             .collect();
 
-        strs.sort();
         let da = DoubleArrayTrieBuilder::new()
-            .progress(|c, t| print!("{}/{}", c, t))
+            .progress(|c, t| println!("{}/{}", c, t))
             .build(&strs);
 
         println!("find => {:?}", da.exact_match_search("she"));
@@ -305,11 +299,10 @@ mod tests {
             .map(|s| s.unwrap())
             .collect();
 
-        let mut strs: Vec<&str> = keys.iter()
+        let strs: Vec<&str> = keys.iter()
             .map(|n| n.split(' ').next().unwrap())
             .collect();
 
-        strs.sort();
         b.iter(|| DoubleArrayTrieBuilder::new().build(&strs));
     }
 
@@ -323,11 +316,10 @@ mod tests {
             .map(|s| s.unwrap())
             .collect();
 
-        let mut strs: Vec<&str> = keys.iter()
+        let strs: Vec<&str> = keys.iter()
             .map(|n| n.split(' ').next().unwrap())
             .collect();
 
-        strs.sort();
         let da = DoubleArrayTrieBuilder::new().build(&strs);
         b.iter(|| da.exact_match_search("东湖高新技术开发区"));
     }
