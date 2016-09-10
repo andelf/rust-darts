@@ -1,3 +1,6 @@
+#![feature(test)]
+extern crate test;
+
 // rust String is stored as Vec<u8> instead of [char] like Java.
 // indexing rust String by chars uses linear scan
 
@@ -26,7 +29,6 @@ pub struct DoubleArrayTrieBuilder<'a> {
     key_size: usize,
 
     keys: &'a [&'a str],           // use usize as key
-    length: Vec<usize>,          // keys length
     values: Vec<usize>,          // values
 
     next_check_pos: usize,
@@ -44,7 +46,6 @@ impl<'a> DoubleArrayTrieBuilder<'a>  {
             alloc_size: 0,
             key_size: 0,
             keys: &[],
-            length: vec![],
             values: vec![],
             next_check_pos: 0,
             progress: 0,
@@ -80,10 +81,7 @@ impl<'a> DoubleArrayTrieBuilder<'a>  {
 
         let mut siblings = Vec::new();
         self.fetch(&root_node, &mut siblings);
-        println!("fetch ok");
-        println!("siblings.len() => {}", siblings.len());
         self.insert(&siblings);
-        println!("insert ok");
 
         let DoubleArrayTrieBuilder { check, base, .. } = self;
 
@@ -99,8 +97,6 @@ impl<'a> DoubleArrayTrieBuilder<'a>  {
         self.used.resize(new_len, false);
 
         self.alloc_size = new_len;
-
-        println!("resizing to {}", new_len);
     }
 
     // FIXME: no need to make this &self
@@ -171,7 +167,7 @@ impl<'a> DoubleArrayTrieBuilder<'a>  {
             begin = pos - siblings[0].code;
             if self.alloc_size <= begin + siblings.last().map(|n| n.code).unwrap() {
                 let l = (self.alloc_size as f32) *
-                    max(1.05, 1.0 * self.key_size as f32 / (self.progress as f32 + 1.0));
+                    max(1.05, self.key_size as f32 / (self.progress as f32 + 1.0));
                 self.resize(l as usize)
             }
 
@@ -191,7 +187,7 @@ impl<'a> DoubleArrayTrieBuilder<'a>  {
         // Simple heuristics
         // 从位置 next_check_pos 开始到 pos 间，如果已占用的空间在95%以上，
         // 下次插入节点时，直接从 pos 位置处开始查找
-        if 1.0 * nonzero_num as f32 / (pos as f32 - self.next_check_pos as f32 + 1.0) >= 0.95 {
+        if nonzero_num as f32 / (pos as f32 - self.next_check_pos as f32 + 1.0) >= 0.95 {
             self.next_check_pos = pos;
         }
 
@@ -225,7 +221,6 @@ impl<'a> DoubleArrayTrieBuilder<'a>  {
 pub struct DoubleArrayTrie {
     base: Vec<i32>,             // use negetive to indicate fail
     check: Vec<u32>,
-//    used: Vec<bool>
 }
 
 
@@ -236,11 +231,8 @@ impl DoubleArrayTrie {
         let mut b = self.base[0];
         let mut p: usize;
 
-        // println!("b = {}", b);
-        // println!("base =>\n{:?}", self.base);
-        // println!("check =>\n{:?}", self.check);
         for i in 0..len {
-            println!("matching s[{}] = {}", i, key.as_bytes()[i] as char);
+            // println!("matching s[{}] = {}", i, key.as_bytes()[i] as u32);
             p = (b + key.as_bytes()[i] as i32 + 1) as usize;
 
             if b == self.check[p] as i32 {
@@ -266,8 +258,13 @@ impl DoubleArrayTrie {
 
 #[cfg(test)]
 mod tests {
-
     use super::*;
+    use std::io::prelude::*;
+    use std::io::BufReader;
+    use std::fs::File;
+
+    use test::Bencher;
+
 
     #[test]
     fn test_double_array_trie() {
@@ -275,12 +272,72 @@ mod tests {
             "he", "she", "his", "hers",
             "一举", "一举一动", "一举成名", "一举成名天下知", "万能", "万能胶"
         ];
+
+        let f = File::open("./priv/dict.txt.big").unwrap();
+
+        let keys: Vec<String> = BufReader::new(f)
+            .lines()
+            .map(|s| s.unwrap())
+            .collect();
+
+        let mut strs: Vec<&str> = keys.iter()
+            .map(|n| n.split(' ').next().unwrap())
+            .collect();
+
         strs.sort();
         let da = DoubleArrayTrieBuilder::new()
-            .progress(|c, t| println!("{}/{}", c, t))
+            .progress(|c, t| print!("{}/{}", c, t))
             .build(&strs);
-        //println!("dump => {:?}", da);
+
         println!("find => {:?}", da.exact_match_search("she"));
         println!("find => {:?}", da.exact_match_search("万能胶"));
+        println!("find => {:?}", da.exact_match_search("呼伦贝尔"));
+        println!("find => {:?}", da.exact_match_search("东湖高新技术开发区"));
     }
+
+    #[bench]
+    fn bench_double_array_trie_build(b: &mut Bencher) {
+
+        let f = File::open("./priv/dict.txt.big").unwrap();
+
+        let keys: Vec<String> = BufReader::new(f)
+            .lines()
+            .map(|s| s.unwrap())
+            .collect();
+
+        let mut strs: Vec<&str> = keys.iter()
+            .map(|n| n.split(' ').next().unwrap())
+            .collect();
+
+        strs.sort();
+        b.iter(|| DoubleArrayTrieBuilder::new().build(&strs));
+    }
+
+
+    #[bench]
+    fn bench_double_array_trie_match(b: &mut Bencher) {
+        let f = File::open("./priv/dict.txt.big").unwrap();
+
+        let keys: Vec<String> = BufReader::new(f)
+            .lines()
+            .map(|s| s.unwrap())
+            .collect();
+
+        let mut strs: Vec<&str> = keys.iter()
+            .map(|n| n.split(' ').next().unwrap())
+            .collect();
+
+        strs.sort();
+        let da = DoubleArrayTrieBuilder::new().build(&strs);
+        b.iter(|| da.exact_match_search("东湖高新技术开发区"));
+    }
+
 }
+
+/*
+// bench
+./priv/dict.txt.big
+test tests::bench_double_array_trie_build ... bench: 485,625,473 ns/iter (+/- 47,894,684)
+test tests::bench_double_array_trie_match ... bench:          71 ns/iter (+/- 9)
+
+*/
