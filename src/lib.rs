@@ -1,10 +1,20 @@
 #![feature(test)]
 extern crate test;
 
+#[macro_use]
+extern crate log;
+
+extern crate rustc_serialize;
+extern crate bincode;
+
+
 
 use std::str;
 use std::iter;
 use std::vec;
+
+use bincode::SizeLimit;
+use bincode::rustc_serialize::{encode, decode};
 
 
 // rust String is stored as Vec<u8> instead of [char] like Java.
@@ -32,9 +42,8 @@ pub struct DoubleArrayTrieBuilder<'a> {
 
     size: usize,
     alloc_size: usize,
-    keys: Vec<iter::Chain<
-            str::Chars<'a>,
-            vec::IntoIter<char>>>,      // String::chars() iterator
+    keys: Vec<iter::Chain<str::Chars<'a>,
+                          vec::IntoIter<char>>>,      // String::chars() iterator
     next_check_pos: usize,
 
     progress: usize,
@@ -87,11 +96,19 @@ impl<'a> DoubleArrayTrieBuilder<'a>  {
         self.fetch(&root_node, &mut siblings);
         self.insert(&siblings);
 
-        let DoubleArrayTrieBuilder { check, base, .. } = self;
+        // shrink size
+        let last_used_pos = self.used.iter()
+            .enumerate()
+            .rev()
+            .find(|&(_i,&k)| k == true)
+            .map(|n| n.0 + std::char::MAX as usize)
+            .unwrap_or(self.alloc_size);
+        self.resize(last_used_pos);
 
+        let DoubleArrayTrieBuilder { check, base, .. } = self;
         DoubleArrayTrie {
             check: check,
-            base: base
+            base: base,
         }
     }
 
@@ -103,12 +120,9 @@ impl<'a> DoubleArrayTrieBuilder<'a>  {
         self.alloc_size = new_len;
     }
 
-    // FIXME: no need to make this &self
     fn fetch(&mut self, parent: &Node, siblings: &mut Vec<Node>) -> usize {
-
         let mut prev = 0;
 
-        //println!("left / right => ({}, {})", parent.left, parent.right);
         for i in parent.left .. parent.right {
             let c = self.keys[i].next();
 
@@ -148,7 +162,7 @@ impl<'a> DoubleArrayTrieBuilder<'a>  {
     fn insert(&mut self, siblings: &[Node]) -> usize {
 
         let mut begin: usize;
-        let mut pos = max(siblings[0].code + 1, self.next_check_pos) - 1;
+        let mut pos = max(siblings[0].code, self.next_check_pos-1);
         let mut nonzero_num = 0;
         let mut first = 0;
         let key_size = self.keys.len();
@@ -173,6 +187,7 @@ impl<'a> DoubleArrayTrieBuilder<'a>  {
             }
 
             begin = pos - siblings[0].code;
+
             if self.alloc_size <= begin + siblings.last().map(|n| n.code).unwrap() {
                 let l = (self.alloc_size as f32) *
                     max(1.05, key_size as f32 / (self.progress as f32 + 1.0));
@@ -224,22 +239,20 @@ impl<'a> DoubleArrayTrieBuilder<'a>  {
     }
 }
 
-
-#[derive(Debug)]
+#[derive(Debug, RustcEncodable, RustcDecodable)]
 pub struct DoubleArrayTrie {
-    base: Vec<i32>,             // use negetive to indicate fail
+    base: Vec<i32>,             // use negetive to indicate ends
     check: Vec<u32>,
 }
 
 
 impl DoubleArrayTrie {
-    pub fn exact_match_search(&self, key: &str) -> Option<usize> {
 
+    pub fn exact_match_search(&self, key: &str) -> Option<usize> {
         let mut b = self.base[0];
         let mut p: usize;
 
         for c in key.chars() {
-            // println!("matching s[{}] = {}", i, c);
             p = (b + c as i32 + 1) as usize;
 
             if b == self.check[p] as i32 {
@@ -258,6 +271,10 @@ impl DoubleArrayTrie {
             None
         }
     }
+
+    pub fn common_prefix_search(&self, key: &str) -> Option<Vec<usize>> {
+        None
+    }
 }
 
 
@@ -272,9 +289,12 @@ mod tests {
 
     use test::Bencher;
 
+    use bincode::SizeLimit;
+    use bincode::rustc_serialize::{encode, decode};
+
 
     #[test]
-    fn test_double_array_trie() {
+    fn test_double_array_trie_basic() {
         let f = File::open("./priv/dict.txt.big").unwrap();
 
         let mut keys: Vec<String> = BufReader::new(f)
@@ -292,8 +312,14 @@ mod tests {
 //            .progress(|c, t| println!("{}/{}", c, t))
             .build(&strs);
 
+        let encoded: Vec<u8> = encode(&da, SizeLimit::Infinite).unwrap();
+        let _ = File::create("./priv/dict.big.bincode")
+            .as_mut()
+            .map(|f| f.write_all(&encoded))
+            .expect("write ok!");
+
         println!("find => {:?}", da.exact_match_search("she"));
-        println!("find => {:?}", da.exact_match_search("万能胶"));
+        println!("find => {:?}", da.exact_match_search("万能胶啥"));
         println!("find => {:?}", da.exact_match_search("呼伦贝尔"));
         println!("find => {:?}", da.exact_match_search("东湖高新技术开发区"));
     }
@@ -317,33 +343,25 @@ mod tests {
 
 
     #[bench]
-    fn bench_double_array_trie_match(b: &mut Bencher) {
-        let f = File::open("./priv/dict.txt.big").unwrap();
+    fn bench_double_array_trie_match_found(b: &mut Bencher) {
+        let mut f = File::open("./priv/dict.big.bincode").unwrap();
+        let mut buf = Vec::new();
+        let _ = f.read_to_end(&mut buf).unwrap();
 
-        let keys: Vec<String> = BufReader::new(f)
-            .lines()
-            .map(|s| s.unwrap())
-            .collect();
+        let da: DoubleArrayTrie = decode(&buf).unwrap();
 
-        let strs: Vec<&str> = keys.iter()
-            .map(|n| n.split(' ').next().unwrap())
-            .collect();
+        b.iter(|| da.exact_match_search("东湖高新技术开发区").unwrap() );
+    }
 
-        let da = DoubleArrayTrieBuilder::new().build(&strs);
-        b.iter(|| da.exact_match_search("东湖高新技术开发区"));
+    #[bench]
+    fn bench_double_array_trie_match_not_found(b: &mut Bencher) {
+        let mut f = File::open("./priv/dict.big.bincode").unwrap();
+        let mut buf = Vec::new();
+        let _ = f.read_to_end(&mut buf).unwrap();
+
+        let da: DoubleArrayTrie = decode(&buf).unwrap();
+
+        b.iter(|| da.exact_match_search("东湖高新技术开发区啥"));
     }
 
 }
-
-/*
-// bench using u8
-./priv/dict.txt.big
-test tests::bench_double_array_trie_build ... bench: 485,625,473 ns/iter (+/- 47,894,684)
-test tests::bench_double_array_trie_match ... bench:          71 ns/iter (+/- 9)
-
-// bench using char
-
-./priv/dict.txt.big
-test tests::bench_double_array_trie_build ... bench: 3,982,326,218 ns/iter (+/- 390,757,451)
-test tests::bench_double_array_trie_match ... bench:          33 ns/iter (+/- 12)
-*/
