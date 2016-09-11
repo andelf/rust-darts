@@ -1,6 +1,11 @@
 #![feature(test)]
 extern crate test;
 
+use std::str;
+use std::iter;
+use std::vec;
+
+
 // rust String is stored as Vec<u8> instead of [char] like Java.
 // indexing rust String by chars uses linear scan
 
@@ -25,13 +30,12 @@ pub struct DoubleArrayTrieBuilder<'a> {
     used: Vec<bool>,
 
     size: usize,
-    alloc_size: usize,                 // alloc size
-    key_size: usize,
-
-    keys: &'a [&'a str],           // use usize as key
-//    values: Vec<usize>,          // values
-
+    alloc_size: usize,
+    keys: Vec<str::Chars<'a>>,   // String::chars() iterator
+    finished: Vec<bool>,
     next_check_pos: usize,
+
+
     progress: usize,
     progress_func: Option<Box<Fn(usize,usize)->()>>
 }
@@ -42,11 +46,12 @@ impl<'a> DoubleArrayTrieBuilder<'a>  {
             check: vec![],
             base: vec![],
             used: vec![],
+
             size: 0,
             alloc_size: 0,
-            key_size: 0,
-            keys: &[],
-//            values: vec![],
+            keys: vec![],
+            finished: vec![],
+
             next_check_pos: 0,
             progress: 0,
             progress_func: None
@@ -60,15 +65,17 @@ impl<'a> DoubleArrayTrieBuilder<'a>  {
         self
     }
 
-    //    pub fn build(mut self, keys: &[&str], values: &[usize]) -> DoubleArrayTrie {
+    // pub fn build(mut self, keys: &[&str], values: &[usize]) -> DoubleArrayTrie {
     pub fn build(mut self, keys: &'a [&str]) -> DoubleArrayTrie {
 
-        self.key_size = keys.len();
+        // must be size of single store
+        self.resize(std::char::MAX as usize);
 
-        // must be size of single
-        self.resize(std::u8::MAX as usize);
+        self.keys = keys.iter()
+            .map(|s| s.chars())
+            .collect();
+        self.finished.resize(keys.len(), false);
 
-        self.keys = keys;
         self.base[0] = 1;
         self.next_check_pos = 0;
 
@@ -99,26 +106,24 @@ impl<'a> DoubleArrayTrieBuilder<'a>  {
         self.alloc_size = new_len;
     }
 
-    // FIXME: no need to make this &self
-    fn fetch(&self, parent: &Node, siblings: &mut Vec<Node>) -> usize {
+    fn fetch(&mut self, parent: &Node, siblings: &mut Vec<Node>) -> usize {
 
         let mut prev = 0;
 
+        //println!("left / right => ({}, {})", parent.left, parent.right);
         for i in parent.left .. parent.right {
-            if self.keys[i].len() < parent.depth {
-                continue
+            if self.finished[i] {
+                continue;
             }
-
-            let tmp = self.keys[i];
-
-            let mut curr = 0_usize;
-            if self.keys[i].len() != parent.depth {
-                // +1 for that 0 used as NULL
-                curr = tmp.as_bytes()[parent.depth] as usize + 1
-            }
+            let curr = self.keys[i]
+                .next()
+                .map_or(0, |c| c as usize + 1);
 
             assert!(prev <= curr, "keys must be sorted!");
 
+            if curr == 0 {
+                self.finished[i] = true;
+            }
             if curr != prev || siblings.len() == 0 {
                 let tmp_node = Node {
                     code: curr,
@@ -130,7 +135,6 @@ impl<'a> DoubleArrayTrieBuilder<'a>  {
                 siblings.last_mut().map(|n| n.right = i);
                 siblings.push(tmp_node);
             }
-
             prev = curr;
         }
 
@@ -144,6 +148,7 @@ impl<'a> DoubleArrayTrieBuilder<'a>  {
         let mut pos = max(siblings[0].code + 1, self.next_check_pos) - 1;
         let mut nonzero_num = 0;
         let mut first = 0;
+        let key_size = self.keys.len();
 
         if self.alloc_size <= pos {
             self.resize(pos + 1);
@@ -167,7 +172,7 @@ impl<'a> DoubleArrayTrieBuilder<'a>  {
             begin = pos - siblings[0].code;
             if self.alloc_size <= begin + siblings.last().map(|n| n.code).unwrap() {
                 let l = (self.alloc_size as f32) *
-                    max(1.05, self.key_size as f32 / (self.progress as f32 + 1.0));
+                    max(1.05, key_size as f32 / (self.progress as f32 + 1.0));
                 self.resize(l as usize)
             }
 
@@ -204,7 +209,7 @@ impl<'a> DoubleArrayTrieBuilder<'a>  {
                 // FIXME: ignore value ***
                 self.base[begin + sibling.code] = - (sibling.left as i32) - 1;
                 self.progress += 1;
-                self.progress_func.as_ref().map(|f| f(self.progress, self.key_size));
+                self.progress_func.as_ref().map(|f| f(self.progress, key_size));
 
             } else {
                 let h = self.insert(&new_siblings);
@@ -226,14 +231,13 @@ pub struct DoubleArrayTrie {
 
 impl DoubleArrayTrie {
     pub fn exact_match_search(&self, key: &str) -> Option<usize> {
-        let len = key.len();
 
         let mut b = self.base[0];
         let mut p: usize;
 
-        for i in 0..len {
-            // println!("matching s[{}] = {}", i, key.as_bytes()[i] as u32);
-            p = (b + key.as_bytes()[i] as i32 + 1) as usize;
+        for c in key.chars() {
+            // println!("matching s[{}] = {}", i, c);
+            p = (b + c as i32 + 1) as usize;
 
             if b == self.check[p] as i32 {
                 b = self.base[p];
@@ -270,17 +274,19 @@ mod tests {
     fn test_double_array_trie() {
         let f = File::open("./priv/dict.txt.big").unwrap();
 
-        let keys: Vec<String> = BufReader::new(f)
+        let mut keys: Vec<String> = BufReader::new(f)
             .lines()
             .map(|s| s.unwrap())
             .collect();
+
+        keys.sort();
 
         let strs: Vec<&str> = keys.iter()
             .map(|n| n.split(' ').next().unwrap())
             .collect();
 
         let da = DoubleArrayTrieBuilder::new()
-            .progress(|c, t| println!("{}/{}", c, t))
+        //    .progress(|c, t| println!("{}/{}", c, t))
             .build(&strs);
 
         println!("find => {:?}", da.exact_match_search("she"));
@@ -327,9 +333,20 @@ mod tests {
 }
 
 /*
-// bench
+// bench using u8
 ./priv/dict.txt.big
 test tests::bench_double_array_trie_build ... bench: 485,625,473 ns/iter (+/- 47,894,684)
 test tests::bench_double_array_trie_match ... bench:          71 ns/iter (+/- 9)
 
+// bench using char
+
+./priv/dict.txt.big
+test tests::bench_double_array_trie_build ... bench: 3,982,326,218 ns/iter (+/- 390,757,451)
+test tests::bench_double_array_trie_match ... bench:          33 ns/iter (+/- 12)
+
+
+cargo test -- --nocapture test  429.08s user 3.26s system 290% cpu 2:28.75 total
+
+without print
+cargo test -- --nocapture test  410.55s user 0.80s system 296% cpu 2:18.80 total
 */
