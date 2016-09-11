@@ -1,6 +1,7 @@
 #![feature(test)]
 extern crate test;
 
+
 use std::str;
 use std::iter;
 use std::vec;
@@ -31,10 +32,10 @@ pub struct DoubleArrayTrieBuilder<'a> {
 
     size: usize,
     alloc_size: usize,
-    keys: Vec<str::Chars<'a>>,   // String::chars() iterator
-    finished: Vec<bool>,
+    keys: Vec<iter::Chain<
+            str::Chars<'a>,
+            vec::IntoIter<char>>>,      // String::chars() iterator
     next_check_pos: usize,
-
 
     progress: usize,
     progress_func: Option<Box<Fn(usize,usize)->()>>
@@ -46,12 +47,9 @@ impl<'a> DoubleArrayTrieBuilder<'a>  {
             check: vec![],
             base: vec![],
             used: vec![],
-
             size: 0,
             alloc_size: 0,
             keys: vec![],
-            finished: vec![],
-
             next_check_pos: 0,
             progress: 0,
             progress_func: None
@@ -72,9 +70,8 @@ impl<'a> DoubleArrayTrieBuilder<'a>  {
         self.resize(std::char::MAX as usize);
 
         self.keys = keys.iter()
-            .map(|s| s.chars())
+            .map(|s| s.chars().chain(vec!['\u{0}']))
             .collect();
-        self.finished.resize(keys.len(), false);
 
         self.base[0] = 1;
         self.next_check_pos = 0;
@@ -106,24 +103,29 @@ impl<'a> DoubleArrayTrieBuilder<'a>  {
         self.alloc_size = new_len;
     }
 
+    // FIXME: no need to make this &self
     fn fetch(&mut self, parent: &Node, siblings: &mut Vec<Node>) -> usize {
 
         let mut prev = 0;
 
         //println!("left / right => ({}, {})", parent.left, parent.right);
         for i in parent.left .. parent.right {
-            if self.finished[i] {
+            let c = self.keys[i].next();
+
+            if c.is_none() {
                 continue;
             }
-            let curr = self.keys[i]
-                .next()
-                .map_or(0, |c| c as usize + 1);
+
+            let curr = c.map_or(0, |c| {
+                if c != '\u{0}' {
+                    c as usize + 1   // +1 for that 0 used as NULL
+                } else {
+                    0 // 0表示结束状态
+                }
+            });
 
             assert!(prev <= curr, "keys must be sorted!");
 
-            if curr == 0 {
-                self.finished[i] = true;
-            }
             if curr != prev || siblings.len() == 0 {
                 let tmp_node = Node {
                     code: curr,
@@ -135,6 +137,7 @@ impl<'a> DoubleArrayTrieBuilder<'a>  {
                 siblings.last_mut().map(|n| n.right = i);
                 siblings.push(tmp_node);
             }
+
             prev = curr;
         }
 
@@ -286,7 +289,7 @@ mod tests {
             .collect();
 
         let da = DoubleArrayTrieBuilder::new()
-        //    .progress(|c, t| println!("{}/{}", c, t))
+//            .progress(|c, t| println!("{}/{}", c, t))
             .build(&strs);
 
         println!("find => {:?}", da.exact_match_search("she"));
@@ -343,10 +346,4 @@ test tests::bench_double_array_trie_match ... bench:          71 ns/iter (+/- 9)
 ./priv/dict.txt.big
 test tests::bench_double_array_trie_build ... bench: 3,982,326,218 ns/iter (+/- 390,757,451)
 test tests::bench_double_array_trie_match ... bench:          33 ns/iter (+/- 12)
-
-
-cargo test -- --nocapture test  429.08s user 3.26s system 290% cpu 2:28.75 total
-
-without print
-cargo test -- --nocapture test  410.55s user 0.80s system 296% cpu 2:18.80 total
 */
