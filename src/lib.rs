@@ -74,8 +74,7 @@ impl<'a> DoubleArrayTrieBuilder<'a>  {
 
     // pub fn build(mut self, keys: &[&str], values: &[usize]) -> DoubleArrayTrie {
     pub fn build(mut self, keys: &'a [&str]) -> DoubleArrayTrie {
-
-        // must be size of single store
+        // must be size of single store unit
         self.resize(std::char::MAX as usize);
 
         self.keys = keys.iter()
@@ -96,12 +95,12 @@ impl<'a> DoubleArrayTrieBuilder<'a>  {
         self.fetch(&root_node, &mut siblings);
         self.insert(&siblings);
 
-        // shrink size
+        // shrink size, free the unnecessary memory
         let last_used_pos = self.used.iter()
             .enumerate()
             .rev()
-            .find(|&(_i,&k)| k == true)
-            .map(|n| n.0 + std::char::MAX as usize)
+            .find(|&(_,&k)| k == true)
+            .map(|t| t.0 + std::char::MAX as usize)
             .unwrap_or(self.alloc_size);
         self.resize(last_used_pos);
 
@@ -162,7 +161,7 @@ impl<'a> DoubleArrayTrieBuilder<'a>  {
     fn insert(&mut self, siblings: &[Node]) -> usize {
 
         let mut begin: usize;
-        let mut pos = max(siblings[0].code, self.next_check_pos-1);
+        let mut pos = max(siblings[0].code+1, self.next_check_pos) - 1;
         let mut nonzero_num = 0;
         let mut first = 0;
         let key_size = self.keys.len();
@@ -272,8 +271,40 @@ impl DoubleArrayTrie {
         }
     }
 
-    pub fn common_prefix_search(&self, key: &str) -> Option<Vec<usize>> {
-        None
+    /// (end_index, value)
+    pub fn common_prefix_search(&self, key: &str) -> Option<Vec<(usize, usize)>> {
+        let mut result = vec![];
+
+        let mut b = self.base[0];
+        let mut n;
+        let mut p: usize;
+
+        for (i, c) in key.char_indices() {
+            p = b as usize;
+            n = self.base[p];
+
+            if b == self.check[p] as i32 && n < 0 {
+                result.push((i, (-n-1)as usize))
+            }
+
+            p = b as usize + c as usize + 1;
+            if b == self.check[p] as i32 {
+                b = self.base[p];
+            } else {
+                return if result.is_empty() { None }
+                else { Some(result) };
+            }
+        }
+
+        p = b as usize;
+        n = self.base[p];
+
+        if b == self.check[p] as i32 && n < 0 {
+            result.push((key.len(), (-n-1) as usize));
+            Some(result)
+        } else {
+            None
+        }
     }
 }
 
@@ -309,7 +340,7 @@ mod tests {
             .collect();
 
         let da = DoubleArrayTrieBuilder::new()
-//            .progress(|c, t| println!("{}/{}", c, t))
+            .progress(|c, t| println!("{}/{}", c, t))
             .build(&strs);
 
         let encoded: Vec<u8> = encode(&da, SizeLimit::Infinite).unwrap();
@@ -322,13 +353,43 @@ mod tests {
         println!("find => {:?}", da.exact_match_search("万能胶啥"));
         println!("find => {:?}", da.exact_match_search("呼伦贝尔"));
         println!("find => {:?}", da.exact_match_search("东湖高新技术开发区"));
+
     }
 
     #[bench]
+    fn bench_dat_prefix_search(b: &mut Bencher) {
+        let mut f = File::open("./priv/dict.big.bincode").unwrap();
+        let mut buf = Vec::new();
+        let _ = f.read_to_end(&mut buf).unwrap();
+        let da: DoubleArrayTrie = decode(&buf).unwrap();
+
+        b.iter(|| da.common_prefix_search("中华人民共和国").unwrap() );
+    }
+
+    #[test]
+    fn test_dat_prefix_search() {
+        let mut f = File::open("./priv/dict.big.bincode").unwrap();
+        let mut buf = Vec::new();
+        let _ = f.read_to_end(&mut buf).unwrap();
+        let da: DoubleArrayTrie = decode(&buf).unwrap();
+
+        let string = "中华人民共和国";
+        da.common_prefix_search(string)
+            .as_ref()
+            .map(|matches|
+                 matches.iter().map(|&(end_idx,v)| {
+                     println!("prefix[{}] = {}", &string[..end_idx], v);
+
+
+                 }).last()
+            );
+
+    }
+
+
+    #[bench]
     fn bench_double_array_trie_build(b: &mut Bencher) {
-
         let f = File::open("./priv/dict.txt.big").unwrap();
-
         let keys: Vec<String> = BufReader::new(f)
             .lines()
             .map(|s| s.unwrap())
@@ -347,7 +408,6 @@ mod tests {
         let mut f = File::open("./priv/dict.big.bincode").unwrap();
         let mut buf = Vec::new();
         let _ = f.read_to_end(&mut buf).unwrap();
-
         let da: DoubleArrayTrie = decode(&buf).unwrap();
 
         b.iter(|| da.exact_match_search("东湖高新技术开发区").unwrap() );
