@@ -12,14 +12,64 @@ extern crate bincode;
 use std::str;
 use std::iter;
 use std::vec;
+use std::io;
+use std::io::prelude::*;
+use std::result;
+use std::error;
+use std::fmt;
+
 
 use bincode::SizeLimit;
 use bincode::rustc_serialize::{encode, decode};
 
 
+#[derive(Debug)]
+pub enum DartsError {
+    EncodingError(bincode::rustc_serialize::EncodingError),
+    DecodingError(bincode::rustc_serialize::DecodingError),
+    IoError(io::Error)
+}
+
+impl fmt::Display for DartsError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "rust-darts error")
+    }
+}
+
+impl error::Error for DartsError {
+    fn description(&self) -> &str {
+        match *self {
+            DartsError::EncodingError(ref err) => err.description(),
+            DartsError::DecodingError(ref err) => err.description(),
+            DartsError::IoError(ref err)       => err.description()
+        }
+    }
+    // fn cause(&self) -> Option<&Error> { ... }
+}
+
+pub type Result<T> = result::Result<T, DartsError>;
+
+impl From<bincode::rustc_serialize::EncodingError> for DartsError {
+    fn from(err: bincode::rustc_serialize::EncodingError) -> Self {
+        DartsError::EncodingError(err)
+    }
+}
+
+impl From<bincode::rustc_serialize::DecodingError> for DartsError {
+    fn from(err: bincode::rustc_serialize::DecodingError) -> Self {
+        DartsError::DecodingError(err)
+    }
+}
+
+impl From<io::Error> for DartsError {
+    fn from(err: io::Error) -> Self {
+        DartsError::IoError(err)
+    }
+}
+
+
 // rust String is stored as Vec<u8> instead of [char] like Java.
 // indexing rust String by chars uses linear scan
-
 #[inline]
 fn max<T: PartialOrd + Copy>(a: T, b: T) -> T {
     if a > b { a } else { b }
@@ -306,6 +356,17 @@ impl DoubleArrayTrie {
             None
         }
     }
+
+    pub fn save<W: Write>(&self, w: &mut W) -> Result<()> {
+        let encoded: Vec<u8> = try!(encode(self, SizeLimit::Infinite));
+        Ok(try!(w.write_all(&encoded)))
+    }
+
+    pub fn load<R: Read>(r: &mut R) -> Result<Self> {
+        let mut buf = Vec::new();
+        let _ = try!(r.read_to_end(&mut buf));
+        Ok(try!(decode(&buf)))
+    }
 }
 
 
@@ -332,7 +393,6 @@ mod tests {
             .lines()
             .map(|s| s.unwrap())
             .collect();
-
         keys.sort();
 
         let strs: Vec<&str> = keys.iter()
@@ -379,11 +439,8 @@ mod tests {
             .map(|matches|
                  matches.iter().map(|&(end_idx,v)| {
                      println!("prefix[{}] = {}", &string[..end_idx], v);
-
-
                  }).last()
             );
-
     }
 
 
@@ -418,7 +475,6 @@ mod tests {
         let mut f = File::open("./priv/dict.big.bincode").unwrap();
         let mut buf = Vec::new();
         let _ = f.read_to_end(&mut buf).unwrap();
-
         let da: DoubleArrayTrie = decode(&buf).unwrap();
 
         b.iter(|| da.exact_match_search("东湖高新技术开发区啥"));
