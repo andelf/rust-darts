@@ -1,14 +1,20 @@
+//  FileName    : lib.rs
+//  Author      : ShuYu Wang <andelf@gmail.com>
+//  Created     : Tue Sep 13 23:37:09 2016 by ShuYu Wang
+//  Copyright   : Feather Workshop (c) 2016
+//  Description : A double array trie implementation.
+//  Time-stamp: <2016-09-13 23:38:14 andelf>
+
+#![cfg_attr(feature = "dev", plugin(clippy))]
+#![cfg_attr(not(feature = "dev"), allow(unknown_lints))]
 #![feature(pattern)]
-
 #![feature(test)]
-extern crate test;
 
+extern crate test;
 #[macro_use]
 extern crate log;
-
 extern crate rustc_serialize;
 extern crate bincode;
-
 
 
 use std::str;
