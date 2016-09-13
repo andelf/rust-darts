@@ -1,3 +1,5 @@
+#![feature(pattern)]
+
 #![feature(test)]
 extern crate test;
 
@@ -18,11 +20,13 @@ use std::result;
 use std::error;
 use std::fmt;
 
+use std::str::pattern::{Searcher, SearchStep};
 
 use bincode::SizeLimit;
 use bincode::rustc_serialize::{encode, decode};
 
 
+/// The error type which is used in this crate.
 #[derive(Debug)]
 pub enum DartsError {
     EncodingError(bincode::rustc_serialize::EncodingError),
@@ -47,6 +51,7 @@ impl error::Error for DartsError {
     // fn cause(&self) -> Option<&Error> { ... }
 }
 
+/// The result type which is used in this crate.
 pub type Result<T> = result::Result<T, DartsError>;
 
 impl From<bincode::rustc_serialize::EncodingError> for DartsError {
@@ -68,8 +73,6 @@ impl From<io::Error> for DartsError {
 }
 
 
-// rust String is stored as Vec<u8> instead of [char] like Java.
-// indexing rust String by chars uses linear scan
 #[inline]
 fn max<T: PartialOrd + Copy>(a: T, b: T) -> T {
     if a > b { a } else { b }
@@ -84,7 +87,7 @@ struct Node {
     right: usize
 }
 
-
+/// Build a Double Arrary Trie from a series of strings.
 pub struct DoubleArrayTrieBuilder<'a> {
     check: Vec<u32>,
     base: Vec<i32>,
@@ -115,6 +118,7 @@ impl<'a> DoubleArrayTrieBuilder<'a>  {
         }
     }
 
+    /// Set callback to inspect trie building progress.
     pub fn progress<F>(mut self, func: F) -> DoubleArrayTrieBuilder<'a>
         where F: 'static + Fn(usize, usize) -> () {
 
@@ -288,6 +292,7 @@ impl<'a> DoubleArrayTrieBuilder<'a>  {
     }
 }
 
+/// A Double Array Trie.
 #[derive(Debug, RustcEncodable, RustcDecodable)]
 pub struct DoubleArrayTrie {
     base: Vec<i32>,             // use negetive to indicate ends
@@ -296,7 +301,7 @@ pub struct DoubleArrayTrie {
 
 
 impl DoubleArrayTrie {
-
+    /// Match whole string.
     pub fn exact_match_search(&self, key: &str) -> Option<usize> {
         let mut b = self.base[0];
         let mut p: usize;
@@ -321,7 +326,7 @@ impl DoubleArrayTrie {
         }
     }
 
-    /// (end_index, value)
+    /// Find all matched prefixes. Returns [(end_index, value)].
     pub fn common_prefix_search(&self, key: &str) -> Option<Vec<(usize, usize)>> {
         let mut result = vec![];
 
@@ -357,20 +362,107 @@ impl DoubleArrayTrie {
         }
     }
 
+    /// Save DAT to an output stream.
     pub fn save<W: Write>(&self, w: &mut W) -> Result<()> {
         let encoded: Vec<u8> = try!(encode(self, SizeLimit::Infinite));
         Ok(try!(w.write_all(&encoded)))
     }
 
+    /// Load DAT from input stream.
     pub fn load<R: Read>(r: &mut R) -> Result<Self> {
         let mut buf = Vec::new();
         let _ = try!(r.read_to_end(&mut buf));
         Ok(try!(decode(&buf)))
     }
+
+    /// Run Forward Maximum Matching Method on a string. Returns a Searcher.
+    pub fn search<'a, 'b>(&'b self, haystack: &'a str) -> DoubleArrayTrieSearcher<'a, 'b> {
+        DoubleArrayTrieSearcher {
+            haystack: haystack,
+            dat: self,
+            start_pos: 0
+        }
+    }
 }
 
 
+/// A seracher for all words in Double Array Trie, using Forward Maximum Matching Method.
+pub struct DoubleArrayTrieSearcher<'a, 'b> {
+    haystack: &'a str,
+    dat: &'b DoubleArrayTrie,
+    start_pos: usize
+}
 
+impl<'a, 'b> DoubleArrayTrieSearcher<'a, 'b> {
+    pub fn search_step_to_str(&self, step: &SearchStep) -> String {
+        match *step {
+            SearchStep::Match(start, end)
+                => format!("{}/n", &self.haystack()[start..end]),
+            SearchStep::Reject(start, end)
+                => format!("{}/x", &self.haystack()[start..end]),
+            _ => "/#".into()
+        }
+    }
+}
+
+
+unsafe impl<'a, 'b> Searcher<'a> for DoubleArrayTrieSearcher<'a, 'b> {
+    fn haystack(&self) -> &'a str { self.haystack }
+
+    fn next(&mut self) -> SearchStep {
+        let base = &self.dat.base;
+        let check = &self.dat.check;
+
+        let mut b = base[0];
+        let mut n;
+        let mut p: usize;
+
+        let start_pos = self.start_pos;
+
+        let mut next_pos = 0;
+        let mut result = None;
+
+        if start_pos >= self.haystack.len() {
+            return SearchStep::Done;
+        }
+
+        for (i, c) in self.haystack[start_pos..].char_indices() {
+            p = b as usize;
+            n = base[p];
+
+            if b == check[p] as i32 && n < 0 {
+                next_pos = start_pos + i;
+                result = Some(SearchStep::Match(start_pos, start_pos+i));
+            }
+
+            p = b as usize + c as usize + 1;
+            if b == check[p] as i32 {
+                b = base[p];
+            } else {
+                if result.is_some() {
+                    // last item is the maximum matching
+                    self.start_pos = next_pos;
+                    return result.unwrap();
+                } else {
+                    self.start_pos = start_pos + i + c.len_utf8();
+                    return SearchStep::Reject(start_pos, self.start_pos);
+                }
+            }
+        }
+
+        p = b as usize;
+        n = base[p];
+
+        // full match from start to end
+        self.start_pos = self.haystack.len();
+        if b == check[p] as i32 && n < 0 {
+            SearchStep::Match(start_pos, self.start_pos)
+        } else {
+            SearchStep::Reject(start_pos, self.start_pos)
+        }
+
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -378,15 +470,13 @@ mod tests {
     use std::io::prelude::*;
     use std::io::BufReader;
     use std::fs::File;
+    use std::str::pattern::{Searcher, SearchStep};
 
     use test::Bencher;
 
-    use bincode::SizeLimit;
-    use bincode::rustc_serialize::{encode, decode};
-
 
     #[test]
-    fn test_double_array_trie_basic() {
+    fn test_dat_basic() {
         let f = File::open("./priv/dict.txt.big").unwrap();
 
         let mut keys: Vec<String> = BufReader::new(f)
@@ -403,25 +493,22 @@ mod tests {
             .progress(|c, t| println!("{}/{}", c, t))
             .build(&strs);
 
-        let encoded: Vec<u8> = encode(&da, SizeLimit::Infinite).unwrap();
         let _ = File::create("./priv/dict.big.bincode")
             .as_mut()
-            .map(|f| f.write_all(&encoded))
+            .map(|f| da.save(f))
             .expect("write ok!");
 
-        println!("find => {:?}", da.exact_match_search("she"));
-        println!("find => {:?}", da.exact_match_search("万能胶啥"));
-        println!("find => {:?}", da.exact_match_search("呼伦贝尔"));
-        println!("find => {:?}", da.exact_match_search("东湖高新技术开发区"));
+        assert!(da.exact_match_search("she").is_none());
+        assert!(da.exact_match_search("万能胶啥").is_none());
+        assert!(da.exact_match_search("呼伦贝尔").is_some());
+        assert!(da.exact_match_search("东湖高新技术开发区").is_some());
 
     }
 
     #[bench]
     fn bench_dat_prefix_search(b: &mut Bencher) {
         let mut f = File::open("./priv/dict.big.bincode").unwrap();
-        let mut buf = Vec::new();
-        let _ = f.read_to_end(&mut buf).unwrap();
-        let da: DoubleArrayTrie = decode(&buf).unwrap();
+        let da = DoubleArrayTrie::load(&mut f).unwrap();
 
         b.iter(|| da.common_prefix_search("中华人民共和国").unwrap() );
     }
@@ -429,9 +516,7 @@ mod tests {
     #[test]
     fn test_dat_prefix_search() {
         let mut f = File::open("./priv/dict.big.bincode").unwrap();
-        let mut buf = Vec::new();
-        let _ = f.read_to_end(&mut buf).unwrap();
-        let da: DoubleArrayTrie = decode(&buf).unwrap();
+        let da = DoubleArrayTrie::load(&mut f).unwrap();
 
         let string = "中华人民共和国";
         da.common_prefix_search(string)
@@ -443,9 +528,51 @@ mod tests {
             );
     }
 
+    #[test]
+    fn test_dat_searcher() {
+        let mut f = File::open("./priv/dict.big.bincode").unwrap();
+        let da = DoubleArrayTrie::load(&mut f).unwrap();
+
+        let text = "江西鄱阳湖干枯，中国最大淡水湖变成大草原";
+        let mut searcher = da.search(&text);
+
+        let mut result  = vec![];
+        loop {
+            let step = searcher.next();
+            // println!("{:?}\t{}", step, searcher.search_step_to_str(&step));
+            if step == SearchStep::Done { break; }
+            result.push(step);
+        }
+        let segmented = result.iter()
+            .map(|s| searcher.search_step_to_str(s))
+            .collect::<Vec<String>>()
+            .join(" ");
+        assert_eq!(segmented,
+                   "江西/n 鄱阳湖/n 干枯/n ，/x 中国/n 最大/n 淡水湖/n 变成/n 大/n 草原/n");
+    }
 
     #[bench]
-    fn bench_double_array_trie_build(b: &mut Bencher) {
+    fn bench_dat_searcher(b: &mut Bencher) {
+        let mut f = File::open("./priv/dict.big.bincode").unwrap();
+        let da = DoubleArrayTrie::load(&mut f).unwrap();
+
+        let mut f = File::open("./priv/《我的团长我的团》全集.txt").unwrap();
+        let mut text = String::new();
+        f.read_to_string(&mut text).unwrap();
+
+        let mut searcher = da.search(&text);
+        assert!(text.len() > 0);
+
+        b.iter(|| loop {
+            let step = searcher.next();
+            if step == SearchStep::Done { break; }
+        });
+        // MacBook Pro (Retina, 15-inch, Mid 2014)
+        // bench:   7,700,815 ns/iter (+/- 2,151,048)
+    }
+
+    #[bench]
+    fn bench_dat_build(b: &mut Bencher) {
         let f = File::open("./priv/dict.txt.big").unwrap();
         let keys: Vec<String> = BufReader::new(f)
             .lines()
@@ -461,23 +588,18 @@ mod tests {
 
 
     #[bench]
-    fn bench_double_array_trie_match_found(b: &mut Bencher) {
+    fn bench_dat_match_found(b: &mut Bencher) {
         let mut f = File::open("./priv/dict.big.bincode").unwrap();
-        let mut buf = Vec::new();
-        let _ = f.read_to_end(&mut buf).unwrap();
-        let da: DoubleArrayTrie = decode(&buf).unwrap();
+        let da = DoubleArrayTrie::load(&mut f).unwrap();
 
         b.iter(|| da.exact_match_search("东湖高新技术开发区").unwrap() );
     }
 
     #[bench]
-    fn bench_double_array_trie_match_not_found(b: &mut Bencher) {
+    fn bench_dat_match_not_found(b: &mut Bencher) {
         let mut f = File::open("./priv/dict.big.bincode").unwrap();
-        let mut buf = Vec::new();
-        let _ = f.read_to_end(&mut buf).unwrap();
-        let da: DoubleArrayTrie = decode(&buf).unwrap();
+        let da = DoubleArrayTrie::load(&mut f).unwrap();
 
-        b.iter(|| da.exact_match_search("东湖高新技术开发区啥"));
+        b.iter(|| da.exact_match_search("东湖高新技术开发区#"));
     }
-
 }
