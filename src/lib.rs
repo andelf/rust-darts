@@ -29,9 +29,9 @@ use bincode::rustc_serialize::{encode, decode};
 /// The error type which is used in this crate.
 #[derive(Debug)]
 pub enum DartsError {
-    EncodingError(bincode::rustc_serialize::EncodingError),
-    DecodingError(bincode::rustc_serialize::DecodingError),
-    IoError(io::Error)
+    Encoding(bincode::rustc_serialize::EncodingError),
+    Decoding(bincode::rustc_serialize::DecodingError),
+    Io(io::Error)
 }
 
 impl fmt::Display for DartsError {
@@ -43,9 +43,9 @@ impl fmt::Display for DartsError {
 impl error::Error for DartsError {
     fn description(&self) -> &str {
         match *self {
-            DartsError::EncodingError(ref err) => err.description(),
-            DartsError::DecodingError(ref err) => err.description(),
-            DartsError::IoError(ref err)       => err.description()
+            DartsError::Encoding(ref err) => err.description(),
+            DartsError::Decoding(ref err) => err.description(),
+            DartsError::Io(ref err)       => err.description()
         }
     }
     // fn cause(&self) -> Option<&Error> { ... }
@@ -56,19 +56,19 @@ pub type Result<T> = result::Result<T, DartsError>;
 
 impl From<bincode::rustc_serialize::EncodingError> for DartsError {
     fn from(err: bincode::rustc_serialize::EncodingError) -> Self {
-        DartsError::EncodingError(err)
+        DartsError::Encoding(err)
     }
 }
 
 impl From<bincode::rustc_serialize::DecodingError> for DartsError {
     fn from(err: bincode::rustc_serialize::DecodingError) -> Self {
-        DartsError::DecodingError(err)
+        DartsError::Decoding(err)
     }
 }
 
 impl From<io::Error> for DartsError {
     fn from(err: io::Error) -> Self {
-        DartsError::IoError(err)
+        DartsError::Io(err)
     }
 }
 
@@ -104,6 +104,7 @@ pub struct DoubleArrayTrieBuilder<'a> {
 }
 
 impl<'a> DoubleArrayTrieBuilder<'a>  {
+    // FIXME: clippy complains
     pub fn new() -> DoubleArrayTrieBuilder<'a> {
         DoubleArrayTrieBuilder {
             check: vec![],
@@ -153,9 +154,8 @@ impl<'a> DoubleArrayTrieBuilder<'a>  {
         let last_used_pos = self.used.iter()
             .enumerate()
             .rev()
-            .find(|&(_,&k)| k == true)
-            .map(|t| t.0 + std::char::MAX as usize)
-            .unwrap_or(self.alloc_size);
+            .find(|&(_,&k)| k)
+            .map_or(self.alloc_size, |t| t.0 + std::char::MAX as usize);
         self.resize(last_used_pos);
 
         let DoubleArrayTrieBuilder { check, base, .. } = self;
@@ -193,7 +193,7 @@ impl<'a> DoubleArrayTrieBuilder<'a>  {
 
             assert!(prev <= curr, "keys must be sorted!");
 
-            if curr != prev || siblings.len() == 0 {
+            if curr != prev || siblings.is_empty() {
                 let tmp_node = Node {
                     code: curr,
                     depth: parent.depth + 1,
@@ -276,7 +276,7 @@ impl<'a> DoubleArrayTrieBuilder<'a>  {
             let mut new_siblings = Vec::new();
 
             // 一个词的终止且不为其他词的前缀，其实就是叶子节点
-            if self.fetch(&sibling, &mut new_siblings) == 0 {
+            if self.fetch(sibling, &mut new_siblings) == 0 {
                 // FIXME: ignore value ***
                 self.base[begin + sibling.code] = - (sibling.left as i32) - 1;
                 self.progress += 1;
@@ -438,15 +438,13 @@ unsafe impl<'a, 'b> Searcher<'a> for DoubleArrayTrieSearcher<'a, 'b> {
             p = b as usize + c as usize + 1;
             if b == check[p] as i32 {
                 b = base[p];
+            } else if result.is_some() {
+                // last item is the maximum matching
+                self.start_pos = next_pos;
+                return result.unwrap();
             } else {
-                if result.is_some() {
-                    // last item is the maximum matching
-                    self.start_pos = next_pos;
-                    return result.unwrap();
-                } else {
-                    self.start_pos = start_pos + i + c.len_utf8();
-                    return SearchStep::Reject(start_pos, self.start_pos);
-                }
+                self.start_pos = start_pos + i + c.len_utf8();
+                return SearchStep::Reject(start_pos, self.start_pos);
             }
         }
 
@@ -568,7 +566,7 @@ mod tests {
             if step == SearchStep::Done { break; }
         });
         // MacBook Pro (Retina, 15-inch, Mid 2014)
-        // bench:   7,700,815 ns/iter (+/- 2,151,048)
+        // bench:   7,572,550 ns/iter (+/- 1,715,688)
     }
 
     #[bench]
