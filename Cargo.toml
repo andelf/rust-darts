@@ -2,13 +2,18 @@
 name = "darts"
 description = "A double array trie, A Forward Maximum Matching Searcher."
 repository = "https://github.com/andelf/rust-darts"
-version = "0.1.0"
+version = "0.0.1"
 license = "MIT"
 authors = ["andelf <andelf@gmail.com>"]
 keywords = ["trie"]
+
+[features]
+default = []
+dev = ["clippy"]
 
 [dependencies]
 rustc-serialize = "0.3"
 bincode = "0.6"
 log = "0.3"
+clippy = {version = "*", optional = true}
 # clippy = "*"
