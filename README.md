@@ -19,7 +19,7 @@ The test dict files are borrowed from [hankcs/HanLP](https://github.com/hankcs/H
 Init dictionary(for following testcases):
 
 ```bash
-# need minites
+# need minutes, with progress indicator
 time cargo test -- --nocapture --ignored test_dat_basic
 ```
 
