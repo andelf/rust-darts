@@ -11,11 +11,8 @@
 #![feature(test)]
 
 extern crate test;
-#[macro_use]
-extern crate log;
-extern crate rustc_serialize;
 extern crate bincode;
-
+extern crate serde;
 
 use std::str;
 use std::iter;
@@ -28,16 +25,14 @@ use std::fmt;
 
 use std::str::pattern::{Searcher, SearchStep};
 
-use bincode::SizeLimit;
-use bincode::rustc_serialize::{encode, decode};
-
+use serde::{Serialize, Deserialize};
 
 /// The error type which is used in this crate.
 #[derive(Debug)]
 pub enum DartsError {
-    Encoding(bincode::rustc_serialize::EncodingError),
-    Decoding(bincode::rustc_serialize::DecodingError),
+    Serialize(Box<bincode::ErrorKind>),
     Io(io::Error),
+
 }
 
 impl fmt::Display for DartsError {
@@ -49,8 +44,8 @@ impl fmt::Display for DartsError {
 impl error::Error for DartsError {
     fn description(&self) -> &str {
         match *self {
-            DartsError::Encoding(ref err) => err.description(),
-            DartsError::Decoding(ref err) => err.description(),
+            // DartsError::Encoding(ref err) => err.description(),
+            DartsError::Serialize(ref err) => err.description(),
             DartsError::Io(ref err) => err.description(),
         }
     }
@@ -60,6 +55,8 @@ impl error::Error for DartsError {
 /// The result type which is used in this crate.
 pub type Result<T> = result::Result<T, DartsError>;
 
+
+/*
 impl From<bincode::rustc_serialize::EncodingError> for DartsError {
     fn from(err: bincode::rustc_serialize::EncodingError) -> Self {
         DartsError::Encoding(err)
@@ -71,10 +68,17 @@ impl From<bincode::rustc_serialize::DecodingError> for DartsError {
         DartsError::Decoding(err)
     }
 }
+*/
 
 impl From<io::Error> for DartsError {
     fn from(err: io::Error) -> Self {
         DartsError::Io(err)
+    }
+}
+
+impl From<Box<bincode::ErrorKind>> for DartsError {
+    fn from(err: Box<bincode::ErrorKind>) -> Self {
+        DartsError::Serialize(err)
     }
 }
 
@@ -109,7 +113,7 @@ pub struct DoubleArrayTrieBuilder<'a> {
     next_check_pos: usize,
 
     progress: usize,
-    progress_func: Option<Box<Fn(usize, usize) -> ()>>,
+    progress_func: Option<Box<dyn Fn(usize, usize) -> ()>>,
 }
 
 impl<'a> DoubleArrayTrieBuilder<'a> {
@@ -305,7 +309,7 @@ impl<'a> DoubleArrayTrieBuilder<'a> {
 }
 
 /// A Double Array Trie.
-#[derive(Debug, RustcEncodable, RustcDecodable)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct DoubleArrayTrie {
     base: Vec<i32>, // use negetive to indicate ends
     check: Vec<u32>,
@@ -379,7 +383,7 @@ impl DoubleArrayTrie {
 
     /// Save DAT to an output stream.
     pub fn save<W: Write>(&self, w: &mut W) -> Result<()> {
-        let encoded: Vec<u8> = try!(encode(self, SizeLimit::Infinite));
+        let encoded: Vec<u8> = try!(bincode::serialize(self));
         Ok(try!(w.write_all(&encoded)))
     }
 
@@ -387,7 +391,7 @@ impl DoubleArrayTrie {
     pub fn load<R: Read>(r: &mut R) -> Result<Self> {
         let mut buf = Vec::new();
         let _ = try!(r.read_to_end(&mut buf));
-        Ok(try!(decode(&buf)))
+        Ok(try!(bincode::deserialize(&buf)))
     }
 
     /// Run Forward Maximum Matching Method on a string. Returns a Searcher.
@@ -480,7 +484,6 @@ unsafe impl<'a, 'b> Searcher<'a> for DoubleArrayTrieSearcher<'a, 'b> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::prelude::*;
     use std::io::BufReader;
     use std::fs::File;
     use std::str::pattern::{Searcher, SearchStep};
@@ -489,6 +492,7 @@ mod tests {
 
 
     #[test]
+    #[ignore]
     fn test_dat_basic() {
         let f = File::open("./priv/dict.txt.big").unwrap();
 
@@ -503,8 +507,10 @@ mod tests {
                                   .collect();
 
         let da = DoubleArrayTrieBuilder::new()
-                     .progress(|c, t| println!("{}/{}", c, t))
+                     .progress(|current, total| print!("\r{}% {}/{}", current * 100 / total, current, total))
                      .build(&strs);
+
+        println!("\nDone!");
 
         let _ = File::create("./priv/dict.big.bincode")
                     .as_mut()
@@ -515,7 +521,6 @@ mod tests {
         assert!(da.exact_match_search("万能胶啥").is_none());
         assert!(da.exact_match_search("呼伦贝尔").is_some());
         assert!(da.exact_match_search("东湖高新技术开发区").is_some());
-
     }
 
     #[bench]
@@ -550,7 +555,6 @@ mod tests {
 
         let text = "江西鄱阳湖干枯，中国最大淡水湖变成大草原";
         let mut searcher = da.search(&text);
-
         let mut result = vec![];
         loop {
             let step = searcher.next();
@@ -576,20 +580,23 @@ mod tests {
         let mut f = File::open("./priv/《我的团长我的团》全集.txt").unwrap();
         let mut text = String::new();
         f.read_to_string(&mut text).unwrap();
-
-        let mut searcher = da.search(&text);
         assert!(text.len() > 0);
 
-        b.iter(|| loop {
-            let step = searcher.next();
-            if step == SearchStep::Done {
-                break;
+        b.iter(|| {
+            let mut searcher = da.search(&text);
+            loop {
+                let step = searcher.next();
+                if step == SearchStep::Done {
+                    break;
+                }
+                // // For DEBUG
+                // println!("step => {:?} {:?}", step, searcher.search_step_to_str(&step));
             }
         });
-        // MacBook Pro (Retina, 15-inch, Mid 2014)
-        // bench:   7,572,550 ns/iter (+/- 1,715,688)
+        // 33,183,467 ns/iter (+/- 7,799,558)
     }
 
+    /*
     #[bench]
     fn bench_dat_build(b: &mut Bencher) {
         let f = File::open("./priv/dict.txt.big").unwrap();
@@ -604,7 +611,7 @@ mod tests {
 
         b.iter(|| DoubleArrayTrieBuilder::new().build(&strs));
     }
-
+    */
 
     #[bench]
     fn bench_dat_match_found(b: &mut Bencher) {
