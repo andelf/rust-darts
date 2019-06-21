@@ -6,7 +6,6 @@
 //  Time-stamp: <2016-09-13 23:38:14 andelf>
 
 #![cfg_attr(feature = "dev", plugin(clippy))]
-#![cfg_attr(not(feature = "dev"), allow(unknown_lints))]
 #![feature(pattern)]
 #![feature(test)]
 
@@ -55,21 +54,6 @@ impl error::Error for DartsError {
 /// The result type which is used in this crate.
 pub type Result<T> = result::Result<T, DartsError>;
 
-
-/*
-impl From<bincode::rustc_serialize::EncodingError> for DartsError {
-    fn from(err: bincode::rustc_serialize::EncodingError) -> Self {
-        DartsError::Encoding(err)
-    }
-}
-
-impl From<bincode::rustc_serialize::DecodingError> for DartsError {
-    fn from(err: bincode::rustc_serialize::DecodingError) -> Self {
-        DartsError::Decoding(err)
-    }
-}
-*/
-
 impl From<io::Error> for DartsError {
     fn from(err: io::Error) -> Self {
         DartsError::Io(err)
@@ -91,8 +75,6 @@ fn max<T: PartialOrd + Copy>(a: T, b: T) -> T {
         b
     }
 }
-
-
 
 struct Node {
     code: usize,
@@ -116,9 +98,8 @@ pub struct DoubleArrayTrieBuilder<'a> {
     progress_func: Option<Box<dyn Fn(usize, usize) -> ()>>,
 }
 
-impl<'a> DoubleArrayTrieBuilder<'a> {
-    // FIXME: clippy complains
-    pub fn new() -> DoubleArrayTrieBuilder<'a> {
+impl<'a> Default for DoubleArrayTrieBuilder<'a> {
+    fn default() -> Self {
         DoubleArrayTrieBuilder {
             check: vec![],
             base: vec![],
@@ -130,6 +111,12 @@ impl<'a> DoubleArrayTrieBuilder<'a> {
             progress: 0,
             progress_func: None,
         }
+    }
+}
+
+impl<'a> DoubleArrayTrieBuilder<'a> {
+    pub fn new() -> DoubleArrayTrieBuilder<'a> {
+        Default::default()
     }
 
     /// Set callback to inspect trie building progress.
@@ -175,8 +162,8 @@ impl<'a> DoubleArrayTrieBuilder<'a> {
 
         let DoubleArrayTrieBuilder { check, base, .. } = self;
         DoubleArrayTrie {
-            check: check,
-            base: base,
+            check,
+            base,
         }
     }
 
@@ -215,15 +202,17 @@ impl<'a> DoubleArrayTrieBuilder<'a> {
                     left: i,
                     right: 0,
                 };
-
-                siblings.last_mut().map(|n| n.right = i);
+                if let Some(n) = siblings.last_mut() {
+                    n.right = i;
+                }
                 siblings.push(tmp_node);
             }
 
             prev = curr;
         }
-
-        siblings.last_mut().map(|n| n.right = parent.right);
+        if let Some(n) = siblings.last_mut() {
+            n.right = parent.right;
+        }
         siblings.len()
     }
 
@@ -296,8 +285,9 @@ impl<'a> DoubleArrayTrieBuilder<'a> {
                 // FIXME: ignore value ***
                 self.base[begin + sibling.code] = -(sibling.left as i32) - 1;
                 self.progress += 1;
-                self.progress_func.as_ref().map(|f| f(self.progress, key_size));
-
+                if let Some(f) = self.progress_func.as_ref() {
+                    f(self.progress, key_size);
+                }
             } else {
                 let h = self.insert(&new_siblings);
                 self.base[begin + sibling.code] = h as i32;
@@ -384,7 +374,7 @@ impl DoubleArrayTrie {
     /// Save DAT to an output stream.
     pub fn save<W: Write>(&self, w: &mut W) -> Result<()> {
         let encoded: Vec<u8> = try!(bincode::serialize(self));
-        Ok(try!(w.write_all(&encoded)))
+        w.write_all(&encoded).map_err(From::from)
     }
 
     /// Load DAT from input stream.
@@ -397,7 +387,7 @@ impl DoubleArrayTrie {
     /// Run Forward Maximum Matching Method on a string. Returns a Searcher.
     pub fn search<'a, 'b>(&'b self, haystack: &'a str) -> DoubleArrayTrieSearcher<'a, 'b> {
         DoubleArrayTrieSearcher {
-            haystack: haystack,
+            haystack,
             dat: self,
             start_pos: 0,
         }
@@ -421,7 +411,6 @@ impl<'a, 'b> DoubleArrayTrieSearcher<'a, 'b> {
         }
     }
 }
-
 
 unsafe impl<'a, 'b> Searcher<'a> for DoubleArrayTrieSearcher<'a, 'b> {
     fn haystack(&self) -> &'a str {
