@@ -1,4 +1,4 @@
-# rust-darts: Double-ARray Trie System Rust implementation.
+# rust-darts: Double-Array Trie System Rust implementation.
 
 Working in progress, USE AT YOUR RISK. PRs are welcomed.
 
