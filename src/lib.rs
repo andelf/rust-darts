@@ -9,29 +9,28 @@
 #![feature(pattern)]
 #![feature(test)]
 
-extern crate test;
 extern crate bincode;
 extern crate serde;
+extern crate test;
 
-use std::str;
-use std::iter;
-use std::vec;
-use std::io;
-use std::io::prelude::*;
-use std::result;
 use std::error;
 use std::fmt;
+use std::io;
+use std::io::prelude::*;
+use std::iter;
+use std::result;
+use std::str;
+use std::vec;
 
-use std::str::pattern::{Searcher, SearchStep};
+use std::str::pattern::{SearchStep, Searcher};
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 /// The error type which is used in this crate.
 #[derive(Debug)]
 pub enum DartsError {
     Serialize(Box<bincode::ErrorKind>),
     Io(io::Error),
-
 }
 
 impl fmt::Display for DartsError {
@@ -65,7 +64,6 @@ impl From<Box<bincode::ErrorKind>> for DartsError {
         DartsError::Serialize(err)
     }
 }
-
 
 #[inline]
 fn max<T: PartialOrd + Copy>(a: T, b: T) -> T {
@@ -121,9 +119,9 @@ impl<'a> DoubleArrayTrieBuilder<'a> {
 
     /// Set callback to inspect trie building progress.
     pub fn progress<F>(mut self, func: F) -> DoubleArrayTrieBuilder<'a>
-        where F: 'static + Fn(usize, usize) -> ()
+    where
+        F: 'static + Fn(usize, usize) -> (),
     {
-
         self.progress_func = Some(Box::new(func));
         self
     }
@@ -133,9 +131,7 @@ impl<'a> DoubleArrayTrieBuilder<'a> {
         // must be size of single store unit
         self.resize(std::char::MAX as usize);
 
-        self.keys = keys.iter()
-                        .map(|s| s.chars().chain(vec!['\u{0}']))
-                        .collect();
+        self.keys = keys.iter().map(|s| s.chars().chain(vec!['\u{0}'])).collect();
 
         self.base[0] = 1;
         self.next_check_pos = 0;
@@ -152,19 +148,17 @@ impl<'a> DoubleArrayTrieBuilder<'a> {
         self.insert(&siblings);
 
         // shrink size, free the unnecessary memory
-        let last_used_pos = self.used
-                                .iter()
-                                .enumerate()
-                                .rev()
-                                .find(|&(_, &k)| k)
-                                .map_or(self.alloc_size, |t| t.0 + std::char::MAX as usize);
+        let last_used_pos = self
+            .used
+            .iter()
+            .enumerate()
+            .rev()
+            .find(|&(_, &k)| k)
+            .map_or(self.alloc_size, |t| t.0 + std::char::MAX as usize);
         self.resize(last_used_pos);
 
         let DoubleArrayTrieBuilder { check, base, .. } = self;
-        DoubleArrayTrie {
-            check,
-            base,
-        }
+        DoubleArrayTrie { check, base }
     }
 
     fn resize(&mut self, new_len: usize) {
@@ -187,7 +181,7 @@ impl<'a> DoubleArrayTrieBuilder<'a> {
 
             let curr = c.map_or(0, |c| {
                 if c != '\u{0}' {
-                    c as usize + 1   // +1 for that 0 used as NULL
+                    c as usize + 1 // +1 for that 0 used as NULL
                 } else {
                     0 // 0表示结束状态
                 }
@@ -217,7 +211,6 @@ impl<'a> DoubleArrayTrieBuilder<'a> {
     }
 
     fn insert(&mut self, siblings: &[Node]) -> usize {
-
         let mut begin: usize;
         let mut pos = max(siblings[0].code + 1, self.next_check_pos) - 1;
         let mut nonzero_num = 0;
@@ -246,8 +239,7 @@ impl<'a> DoubleArrayTrieBuilder<'a> {
             begin = pos - siblings[0].code;
 
             if self.alloc_size <= begin + siblings.last().map(|n| n.code).unwrap() {
-                let l = (self.alloc_size as f32) *
-                        max(1.05, key_size as f32 / (self.progress as f32 + 1.0));
+                let l = (self.alloc_size as f32) * max(1.05, key_size as f32 / (self.progress as f32 + 1.0));
                 self.resize(l as usize)
             }
 
@@ -272,10 +264,12 @@ impl<'a> DoubleArrayTrieBuilder<'a> {
         }
 
         self.used[begin] = true;
-        self.size = max(self.size,
-                        begin + siblings.last().map(|n| n.code).unwrap() + 1);
+        self.size = max(self.size, begin + siblings.last().map(|n| n.code).unwrap() + 1);
 
-        siblings.iter().map(|n| self.check[begin + n.code] = begin as u32).last();
+        siblings
+            .iter()
+            .map(|n| self.check[begin + n.code] = begin as u32)
+            .last();
 
         for sibling in siblings.iter() {
             let mut new_siblings = Vec::new();
@@ -304,7 +298,6 @@ pub struct DoubleArrayTrie {
     base: Vec<i32>, // use negetive to indicate ends
     check: Vec<u32>,
 }
-
 
 impl DoubleArrayTrie {
     /// Match whole string.
@@ -352,11 +345,7 @@ impl DoubleArrayTrie {
             if b == self.check[p] as i32 {
                 b = self.base[p];
             } else {
-                return if result.is_empty() {
-                    None
-                } else {
-                    Some(result)
-                };
+                return if result.is_empty() { None } else { Some(result) };
             }
         }
 
@@ -373,15 +362,15 @@ impl DoubleArrayTrie {
 
     /// Save DAT to an output stream.
     pub fn save<W: Write>(&self, w: &mut W) -> Result<()> {
-        let encoded: Vec<u8> = try!(bincode::serialize(self));
+        let encoded: Vec<u8> = bincode::serialize(self)?;
         w.write_all(&encoded).map_err(From::from)
     }
 
     /// Load DAT from input stream.
     pub fn load<R: Read>(r: &mut R) -> Result<Self> {
         let mut buf = Vec::new();
-        let _ = try!(r.read_to_end(&mut buf));
-        Ok(try!(bincode::deserialize(&buf)))
+        r.read_to_end(&mut buf)?;
+        Ok(bincode::deserialize(&buf)?)
     }
 
     /// Run Forward Maximum Matching Method on a string. Returns a Searcher.
@@ -393,7 +382,6 @@ impl DoubleArrayTrie {
         }
     }
 }
-
 
 /// A seracher for all words in Double Array Trie, using Forward Maximum Matching Method.
 pub struct DoubleArrayTrieSearcher<'a, 'b> {
@@ -466,45 +454,38 @@ unsafe impl<'a, 'b> Searcher<'a> for DoubleArrayTrieSearcher<'a, 'b> {
         } else {
             SearchStep::Reject(start_pos, self.start_pos)
         }
-
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::BufReader;
     use std::fs::File;
-    use std::str::pattern::{Searcher, SearchStep};
+    use std::io::BufReader;
+    use std::str::pattern::{SearchStep, Searcher};
 
     use test::Bencher;
-
 
     #[test]
     #[ignore]
     fn test_dat_basic() {
         let f = File::open("./priv/dict.txt.big").unwrap();
 
-        let mut keys: Vec<String> = BufReader::new(f)
-                                        .lines()
-                                        .map(|s| s.unwrap())
-                                        .collect();
+        let mut keys: Vec<String> = BufReader::new(f).lines().map(|s| s.unwrap()).collect();
         keys.sort();
 
-        let strs: Vec<&str> = keys.iter()
-                                  .map(|n| n.split(' ').next().unwrap())
-                                  .collect();
+        let strs: Vec<&str> = keys.iter().map(|n| n.split(' ').next().unwrap()).collect();
 
         let da = DoubleArrayTrieBuilder::new()
-                     .progress(|current, total| print!("\r{}% {}/{}", current * 100 / total, current, total))
-                     .build(&strs);
+            .progress(|current, total| print!("\r{}% {}/{}", current * 100 / total, current, total))
+            .build(&strs);
 
         println!("\nDone!");
 
         let _ = File::create("./priv/dict.big.bincode")
-                    .as_mut()
-                    .map(|f| da.save(f))
-                    .expect("write ok!");
+            .as_mut()
+            .map(|f| da.save(f))
+            .expect("write ok!");
 
         assert!(da.exact_match_search("she").is_none());
         assert!(da.exact_match_search("万能胶啥").is_none());
@@ -518,15 +499,14 @@ mod tests {
         let da = DoubleArrayTrie::load(&mut f).unwrap();
 
         let string = "中华人民共和国";
-        da.common_prefix_search(string)
-          .as_ref()
-          .map(|matches| {
-              matches.iter()
-                     .map(|&(end_idx, v)| {
-                         println!("prefix[{}] = {}", &string[..end_idx], v);
-                     })
-                     .last()
-          });
+        da.common_prefix_search(string).as_ref().map(|matches| {
+            matches
+                .iter()
+                .map(|&(end_idx, v)| {
+                    println!("prefix[{}] = {}", &string[..end_idx], v);
+                })
+                .last()
+        });
     }
 
     #[test]
@@ -545,11 +525,14 @@ mod tests {
             }
             result.push(step);
         }
-        let segmented = result.iter()
-                              .map(|s| searcher.search_step_to_str(s))
-                              .collect::<Vec<String>>()
-                              .join(" ");
-        assert_eq!(segmented,
-                   "江西/n 鄱阳湖/n 干枯/n ，/x 中国/n 最大/n 淡水湖/n 变成/n 大/n 草原/n");
+        let segmented = result
+            .iter()
+            .map(|s| searcher.search_step_to_str(s))
+            .collect::<Vec<String>>()
+            .join(" ");
+        assert_eq!(
+            segmented,
+            "江西/n 鄱阳湖/n 干枯/n ，/x 中国/n 最大/n 淡水湖/n 变成/n 大/n 草原/n"
+        );
     }
 }
