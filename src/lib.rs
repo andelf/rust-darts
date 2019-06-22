@@ -512,14 +512,6 @@ mod tests {
         assert!(da.exact_match_search("东湖高新技术开发区").is_some());
     }
 
-    #[bench]
-    fn bench_dat_prefix_search(b: &mut Bencher) {
-        let mut f = File::open("./priv/dict.big.bincode").unwrap();
-        let da = DoubleArrayTrie::load(&mut f).unwrap();
-
-        b.iter(|| da.common_prefix_search("中华人民共和国").unwrap());
-    }
-
     #[test]
     fn test_dat_prefix_search() {
         let mut f = File::open("./priv/dict.big.bincode").unwrap();
@@ -559,62 +551,5 @@ mod tests {
                               .join(" ");
         assert_eq!(segmented,
                    "江西/n 鄱阳湖/n 干枯/n ，/x 中国/n 最大/n 淡水湖/n 变成/n 大/n 草原/n");
-    }
-
-    #[bench]
-    fn bench_dat_searcher(b: &mut Bencher) {
-        let mut f = File::open("./priv/dict.big.bincode").unwrap();
-        let da = DoubleArrayTrie::load(&mut f).unwrap();
-
-        let mut f = File::open("./priv/《我的团长我的团》全集.txt").unwrap();
-        let mut text = String::new();
-        f.read_to_string(&mut text).unwrap();
-        assert!(text.len() > 0);
-
-        b.iter(|| {
-            let mut searcher = da.search(&text);
-            loop {
-                let step = searcher.next();
-                if step == SearchStep::Done {
-                    break;
-                }
-                // // For DEBUG
-                // println!("step => {:?} {:?}", step, searcher.search_step_to_str(&step));
-            }
-        });
-        // 33,183,467 ns/iter (+/- 7,799,558)
-    }
-
-    /*
-    #[bench]
-    fn bench_dat_build(b: &mut Bencher) {
-        let f = File::open("./priv/dict.txt.big").unwrap();
-        let keys: Vec<String> = BufReader::new(f)
-                                    .lines()
-                                    .map(|s| s.unwrap())
-                                    .collect();
-
-        let strs: Vec<&str> = keys.iter()
-                                  .map(|n| n.split(' ').next().unwrap())
-                                  .collect();
-
-        b.iter(|| DoubleArrayTrieBuilder::new().build(&strs));
-    }
-    */
-
-    #[bench]
-    fn bench_dat_match_found(b: &mut Bencher) {
-        let mut f = File::open("./priv/dict.big.bincode").unwrap();
-        let da = DoubleArrayTrie::load(&mut f).unwrap();
-
-        b.iter(|| da.exact_match_search("东湖高新技术开发区").unwrap());
-    }
-
-    #[bench]
-    fn bench_dat_match_not_found(b: &mut Bencher) {
-        let mut f = File::open("./priv/dict.big.bincode").unwrap();
-        let da = DoubleArrayTrie::load(&mut f).unwrap();
-
-        b.iter(|| da.exact_match_search("东湖高新技术开发区#"));
     }
 }
