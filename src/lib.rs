@@ -13,6 +13,7 @@ extern crate serde;
 #[cfg(any(feature = "searcher"))]
 pub mod searcher;
 
+use std::cmp;
 use std::error;
 use std::fmt;
 use std::io;
@@ -60,15 +61,6 @@ impl From<io::Error> for DartsError {
 impl From<Box<bincode::ErrorKind>> for DartsError {
     fn from(err: Box<bincode::ErrorKind>) -> Self {
         DartsError::Serialize(err)
-    }
-}
-
-#[inline]
-fn max<T: PartialOrd + Copy>(a: T, b: T) -> T {
-    if a > b {
-        a
-    } else {
-        b
     }
 }
 
@@ -217,7 +209,7 @@ impl<'a> DoubleArrayTrieBuilder<'a> {
 
     fn insert(&mut self, siblings: &[Node]) -> usize {
         let mut begin: usize;
-        let mut pos = max(siblings[0].code + 1, self.next_check_pos) - 1;
+        let mut pos = cmp::max(siblings[0].code + 1, self.next_check_pos) - 1;
         let mut nonzero_num = 0;
         let mut first = 0;
         let key_size = self.keys.len();
@@ -244,7 +236,7 @@ impl<'a> DoubleArrayTrieBuilder<'a> {
             begin = pos - siblings[0].code;
 
             if self.alloc_size <= begin + siblings.last().map(|n| n.code).unwrap() {
-                let l = (self.alloc_size as f32) * max(1.05, key_size as f32 / (self.progress as f32 + 1.0));
+                let l = self.alloc_size * cmp::max(105, (key_size * 100) / (self.progress + 1)) / 100;
                 self.resize(l as usize)
             }
 
@@ -269,7 +261,7 @@ impl<'a> DoubleArrayTrieBuilder<'a> {
         }
 
         self.used[begin] = true;
-        self.size = max(self.size, begin + siblings.last().map(|n| n.code).unwrap() + 1);
+        self.size = cmp::max(self.size, begin + siblings.last().map(|n| n.code).unwrap() + 1);
 
         siblings
             .iter()
