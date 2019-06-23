@@ -128,6 +128,9 @@ impl<'a> DoubleArrayTrieBuilder<'a> {
 
     // pub fn build(mut self, keys: &[&str], values: &[usize]) -> DoubleArrayTrie {
     pub fn build(mut self, keys: &'a [&str]) -> DoubleArrayTrie {
+        //using the unicode scalar len is correct since that's our DARTS unit here
+        let longest_word_len = keys.iter().map(|s| s.chars().count()).max().unwrap_or(0);
+
         // must be size of single store unit
         self.resize(std::char::MAX as usize);
 
@@ -158,7 +161,11 @@ impl<'a> DoubleArrayTrieBuilder<'a> {
         self.resize(last_used_pos);
 
         let DoubleArrayTrieBuilder { check, base, .. } = self;
-        DoubleArrayTrie { check, base }
+        DoubleArrayTrie {
+            check,
+            base,
+            longest_word_len,
+        }
     }
 
     fn resize(&mut self, new_len: usize) {
@@ -297,6 +304,7 @@ impl<'a> DoubleArrayTrieBuilder<'a> {
 pub struct DoubleArrayTrie {
     base: Vec<i32>, // use negetive to indicate ends
     check: Vec<u32>,
+    longest_word_len: usize,
 }
 
 impl DoubleArrayTrie {
@@ -327,7 +335,11 @@ impl DoubleArrayTrie {
 
     /// Find all matched prefixes. Returns [(end_index, value)].
     pub fn common_prefix_search(&self, key: &str) -> Option<Vec<(usize, usize)>> {
-        let mut result = vec![];
+        // Reserve the capacity to speed up the performance,
+        // the longest prefix is at most the longest word in the dictionary,
+        // and suppose each iteration matches a prefix,
+        // there should be <longest_word_len> number of prefixes matched.
+        let mut result = Vec::with_capacity(self.longest_word_len);
 
         let mut b = self.base[0];
         let mut n;
