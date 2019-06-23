@@ -23,3 +23,7 @@ hashbrown = "0.5.0"
 [[bench]]
 name = "darts_benchmark"
 harness = false
+
+[features]
+default = []
+searcher = []

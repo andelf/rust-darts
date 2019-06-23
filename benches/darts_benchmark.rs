@@ -1,10 +1,11 @@
-#![feature(pattern)]
-
 #[macro_use]
 extern crate criterion;
 extern crate darts;
 extern crate hashbrown;
 extern crate lazy_static;
+
+#[cfg(any(feature = "searcher"))]
+use darts::searcher;
 
 use criterion::Criterion;
 use darts::DoubleArrayTrie;
@@ -12,7 +13,6 @@ use hashbrown::HashMap;
 use lazy_static::lazy_static;
 use std::fs::{read_to_string, File};
 use std::io::{BufRead, BufReader};
-use std::str::pattern::{SearchStep, Searcher};
 
 lazy_static! {
     static ref DA: DoubleArrayTrie = {
@@ -100,13 +100,14 @@ fn bench_hashbrown_match_not_found_fast_fail() {
     HASHMAP.contains_key("abcdef东湖高新技术开发区");
 }
 
+#[cfg(any(feature = "searcher"))]
 fn bench_dat_searcher() {
     let text: String = read_to_string("./priv/weicheng.txt").unwrap();
 
     let mut searcher = DA.search(&text);
     loop {
         let step = searcher.next();
-        if step == SearchStep::Done {
+        if step == searcher::SearchStep::Done {
             break;
         }
     }
@@ -146,6 +147,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         b.iter(|| bench_hashbrown_match_not_found_slow_fail())
     });
 
+    #[cfg(any(feature = "searcher"))]
     c.bench_function("dat searcher", |b| b.iter(|| bench_dat_searcher()));
 }
 
