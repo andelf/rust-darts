@@ -2,17 +2,17 @@
 
 #[macro_use]
 extern crate criterion;
-extern crate lazy_static;
 extern crate darts;
 extern crate hashbrown;
+extern crate lazy_static;
 
 use criterion::Criterion;
-use darts::{DoubleArrayTrie};
+use darts::DoubleArrayTrie;
 use hashbrown::HashMap;
 use lazy_static::lazy_static;
 use std::fs::{read_to_string, File};
 use std::io::{BufRead, BufReader};
-use std::str::pattern::{Searcher, SearchStep};
+use std::str::pattern::{SearchStep, Searcher};
 
 lazy_static! {
     static ref DA: DoubleArrayTrie = {
@@ -99,7 +99,7 @@ fn bench_dat_match_not_found_fast_fail() {
 fn bench_hashbrown_match_not_found_fast_fail() {
     HASHMAP.contains_key("abcdef东湖高新技术开发区");
 }
-    
+
 fn bench_dat_searcher() {
     let text: String = read_to_string("./priv/weicheng.txt").unwrap();
 
@@ -111,7 +111,6 @@ fn bench_dat_searcher() {
         }
     }
 }
-
 
 fn touch_static_variables() {
     DA.exact_match_search(" ");
@@ -146,10 +145,8 @@ fn criterion_benchmark(c: &mut Criterion) {
     c.bench_function("hashbrown match not found slow fail", |b| {
         b.iter(|| bench_hashbrown_match_not_found_slow_fail())
     });
-    
-    c.bench_function("dat searcher", |b| {
-        b.iter(|| bench_dat_searcher())
-    });
+
+    c.bench_function("dat searcher", |b| b.iter(|| bench_dat_searcher()));
 }
 
 criterion_group!(benches, criterion_benchmark);
