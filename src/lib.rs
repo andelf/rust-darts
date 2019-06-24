@@ -133,7 +133,6 @@ pub struct DoubleArrayTrieBuilder<'a> {
     progress_func: Option<Box<dyn Fn(usize, usize) -> ()>>,
 }
 
-
 #[allow(clippy::new_without_default)]
 impl<'a> DoubleArrayTrieBuilder<'a> {
     pub fn new() -> DoubleArrayTrieBuilder<'a> {
