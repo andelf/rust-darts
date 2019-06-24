@@ -90,12 +90,10 @@ impl fmt::Display for DartsError {
 impl error::Error for DartsError {
     fn description(&self) -> &str {
         match *self {
-            // DartsError::Encoding(ref err) => err.description(),
             DartsError::Serialize(ref err) => err.description(),
             DartsError::Io(ref err) => err.description(),
         }
     }
-    // fn cause(&self) -> Option<&Error> { ... }
 }
 
 /// The result type which is used in this crate.
@@ -135,8 +133,10 @@ pub struct DoubleArrayTrieBuilder<'a> {
     progress_func: Option<Box<dyn Fn(usize, usize) -> ()>>,
 }
 
-impl<'a> Default for DoubleArrayTrieBuilder<'a> {
-    fn default() -> Self {
+
+#[allow(clippy::new_without_default)]
+impl<'a> DoubleArrayTrieBuilder<'a> {
+    pub fn new() -> DoubleArrayTrieBuilder<'a> {
         DoubleArrayTrieBuilder {
             check: vec![],
             base: vec![],
@@ -149,12 +149,6 @@ impl<'a> Default for DoubleArrayTrieBuilder<'a> {
             progress_func: None,
         }
     }
-}
-
-impl<'a> DoubleArrayTrieBuilder<'a> {
-    pub fn new() -> DoubleArrayTrieBuilder<'a> {
-        Default::default()
-    }
 
     /// Set callback to inspect trie building progress.
     pub fn progress<F>(mut self, func: F) -> DoubleArrayTrieBuilder<'a>
@@ -165,12 +159,13 @@ impl<'a> DoubleArrayTrieBuilder<'a> {
         self
     }
 
-    // pub fn build(mut self, keys: &[&str], values: &[usize]) -> DoubleArrayTrie {
+    /// Start the building process from root layer, and recursively calling `fetch` and `insert` to
+    /// construct the arrays
     pub fn build(mut self, keys: &'a [&str]) -> DoubleArrayTrie {
-        //using the unicode scalar len is correct since that's our DARTS unit here
+        // using the unicode scalar len is correct since that's our DARTS unit here
         let longest_word_len = keys.iter().map(|s| s.chars().count()).max().unwrap_or(0);
 
-        // must be size of single store unit
+        // it should be at least the range of unicode scalar size since we are offseting by `code`
         self.resize(std::char::MAX as usize);
 
         self.keys = keys.iter().map(|s| s.chars().chain(vec!['\u{0}'])).collect();
@@ -207,6 +202,7 @@ impl<'a> DoubleArrayTrieBuilder<'a> {
         }
     }
 
+    /// Resize all of the arrays we need
     fn resize(&mut self, new_len: usize) {
         self.check.resize(new_len, 0);
         self.base.resize(new_len, 0);
@@ -215,9 +211,12 @@ impl<'a> DoubleArrayTrieBuilder<'a> {
         self.alloc_size = new_len;
     }
 
+    /// To collect the children of `parent` node, by iterating through the same offset of the
+    /// `keys`, and save the result into `siblings`, returning the number of siblings it collects.
     fn fetch(&mut self, parent: &Node, siblings: &mut Vec<Node>) -> usize {
         let mut prev = 0;
 
+        // iterate over the same offset of the `keys`
         for i in parent.left..parent.right {
             let c = self.keys[i].next();
 
@@ -227,14 +226,16 @@ impl<'a> DoubleArrayTrieBuilder<'a> {
 
             let curr = c.map_or(0, |c| {
                 if c != '\u{0}' {
-                    c as usize + 1 // +1 for that 0 used as NULL
+                    c as usize + 1 // since we use \u{0} to indicate the termination of the string, every code has to be offset by 1
                 } else {
-                    0 // 0表示结束状态
+                    0 // \u{0} as the termination of the string
                 }
             });
 
             assert!(prev <= curr, "keys must be sorted!");
 
+            // we found the adjacent characters in the same offset are different, that means we
+            // should add one more sibling in the trie.
             if curr != prev || siblings.is_empty() {
                 let tmp_node = Node {
                     code: curr,
@@ -250,17 +251,22 @@ impl<'a> DoubleArrayTrieBuilder<'a> {
 
             prev = curr;
         }
+
         if let Some(n) = siblings.last_mut() {
             n.right = parent.right;
         }
         siblings.len()
     }
 
+    /// Insert the nodes in the `siblings` into `check` and `base`, returning the index where the
+    /// `siblings` is inserted.
     fn insert(&mut self, siblings: &[Node]) -> usize {
+        assert!(!siblings.is_empty());
+
         let mut begin: usize;
         let mut pos = cmp::max(siblings[0].code + 1, self.next_check_pos) - 1;
-        let mut nonzero_num = 0;
-        let mut first = 0;
+        let mut nonzero_num = 0; // the number of slots in check that already been taken
+        let mut first = 0; // the flag to mark if we have run into the first time for the condition of "check[pos] == 0"
         let key_size = self.keys.len();
 
         if self.alloc_size <= pos {
@@ -274,14 +280,16 @@ impl<'a> DoubleArrayTrieBuilder<'a> {
                 self.resize(pos + 1);
             }
 
+            // iterate through the slot that already has an owner
             if self.check[pos] != 0 {
                 nonzero_num += 1;
                 continue;
             } else if first == 0 {
-                self.next_check_pos = pos;
+                self.next_check_pos = pos; // remember the slot so the next time we call `insert` we could save some time for searching
                 first = 1;
             }
 
+            // derive the `begin` in reverse, substract the code from `pos`
             begin = pos - siblings[0].code;
 
             if self.alloc_size <= begin + siblings.last().map(|n| n.code).unwrap() {
@@ -289,22 +297,24 @@ impl<'a> DoubleArrayTrieBuilder<'a> {
                 self.resize(l as usize)
             }
 
+            // then we check if the `begin` is already taken
             if self.used[begin] {
                 continue;
             }
 
+            // check if any of the slots where we should put the code are taken.
             for n in siblings.iter() {
                 if self.check[begin + n.code] != 0 {
                     continue 'outer;
                 }
             }
 
+            // all are available, break out the loop.
             break;
         }
 
-        // Simple heuristics
-        // 从位置 next_check_pos 开始到 pos 间，如果已占用的空间在95%以上，
-        // 下次插入节点时，直接从 pos 位置处开始查找
+        // heuristic search, if the places we have iterated over where 95% of them are taken, then
+        // we just jump start from `pos` in the next cycle
         if nonzero_num as f32 / (pos as f32 - self.next_check_pos as f32 + 1.0) >= 0.95 {
             self.next_check_pos = pos;
         }
@@ -312,24 +322,29 @@ impl<'a> DoubleArrayTrieBuilder<'a> {
         self.used[begin] = true;
         self.size = cmp::max(self.size, begin + siblings.last().map(|n| n.code).unwrap() + 1);
 
+        // mark the ownership of these cells
         siblings
             .iter()
             .map(|n| self.check[begin + n.code] = begin as u32)
             .last();
 
+        // recursively call `fetch` and `insert` for this level of the nodes
         for sibling in siblings.iter() {
             let mut new_siblings = Vec::new();
 
-            // 一个词的终止且不为其他词的前缀，其实就是叶子节点
+            // a string without any children, then it means we reach a leaf node.
             if self.fetch(sibling, &mut new_siblings) == 0 {
-                // FIXME: ignore value ***
+                // mark it as negative number to signal it is a leaf.
                 self.base[begin + sibling.code] = -(sibling.left as i32) - 1;
+
                 self.progress += 1;
                 if let Some(f) = self.progress_func.as_ref() {
                     f(self.progress, key_size);
                 }
             } else {
                 let h = self.insert(&new_siblings);
+
+                // save the insertion index into `base`
                 self.base[begin + sibling.code] = h as i32;
             }
         }
@@ -437,6 +452,9 @@ mod tests {
         let f = File::open("./priv/dict.txt.big").unwrap();
 
         let mut keys: Vec<String> = BufReader::new(f).lines().map(|s| s.unwrap()).collect();
+
+        // sort the key in lexigraphical order so that we don't need relocate the `base` and
+        // `check`
         keys.sort();
 
         let strs: Vec<&str> = keys.iter().map(|n| n.split(' ').next().unwrap()).collect();
@@ -451,15 +469,10 @@ mod tests {
             .as_mut()
             .map(|f| da.save(f))
             .expect("write ok!");
-
-        assert!(da.exact_match_search("she").is_none());
-        assert!(da.exact_match_search("万能胶啥").is_none());
-        assert!(da.exact_match_search("呼伦贝尔").is_some());
-        assert!(da.exact_match_search("东湖高新技术开发区").is_some());
     }
 
     #[test]
-    fn test_dat_prefix_search() {
+    fn test_dat_exact_match_search() {
         let mut f = File::open("./priv/dict.big.bincode").unwrap();
         let da = DoubleArrayTrie::load(&mut f).unwrap();
 
@@ -472,5 +485,19 @@ mod tests {
                 })
                 .last()
         });
+    }
+
+    #[test]
+    fn test_dat_prefix_search() {
+        let mut f = File::open("./priv/dict.big.bincode").unwrap();
+        let da = DoubleArrayTrie::load(&mut f).unwrap();
+        assert!(da.exact_match_search("东湖高新技术开发区").is_some());
+    }
+
+    #[test]
+    fn test_dat_builder() {
+        let strs: Vec<&str> = vec!["a", "ab", "abc"];
+        let da = DoubleArrayTrieBuilder::new().build(&strs);
+        assert!(da.exact_match_search("abc").is_some());
     }
 }
