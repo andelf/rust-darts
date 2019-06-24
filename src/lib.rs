@@ -21,10 +21,10 @@
 //!     let mut f = File::open("./priv/dict.big.bincode").unwrap();
 //!     let da = DoubleArrayTrie::load(&mut f).unwrap();
 //!     let string = "中华人民共和国";
-//!     let prefixes = da.common_prefix_search(string).as_ref().map(|matches| {
+//!     let prefixes = da.common_prefix_search(string).map(|matches| {
 //!         matches
 //!             .into_iter()
-//!             .map(|&(end_idx, v)| {
+//!             .map(|(end_idx, v)| {
 //!                 &string[..end_idx]
 //!             })
 //!             .collect()

@@ -1,6 +1,6 @@
 # rust-darts: Double-Array Trie Rust implementation.
 
-This library is in alpha state, PRs are welcomed. An optional Forward Maximum Matching Searcher is provided when enabled by features. 
+This library is in alpha state, PRs are welcomed. An optional Forward Maximum Matching Searcher is provided when enabled by features.
 
 ## Installation
 
@@ -16,29 +16,28 @@ then you are good to go. If you are using Rust 2015 you have to `extern crate da
 ## Example
 
 ```rust
-use darts::DoubleArrayTrie;
 use std::fs::File;
+use darts::DoubleArrayTrie;
 
 fn main() {
     let mut f = File::open("./priv/dict.big.bincode").unwrap();
     let da = DoubleArrayTrie::load(&mut f).unwrap();
     let string = "中华人民共和国";
-    let prefixes = da.common_prefix_search(string).as_ref().map(|matches| {
-        let res = matches
+    let prefixes = da.common_prefix_search(string).map(|matches| {
+        matches
             .iter()
-            .map(|&(end_idx, v)| {
+            .map(|(end_idx, v)| {
                 &string[..end_idx]
             })
             .collect();
-        res
     }).unwrap_or(vec![]);
     assert_eq!(vec!["中", "中华", "中华人民", "中华人民共和国"], prefixes);
 }
 ```
 
 ```rust
-use darts::DoubleArrayTrie;
 use std::fs::File;
+use darts::DoubleArrayTrie;
 
 fn main() {
     let mut f = File::open("./priv/dict.big.bincode").unwrap();
@@ -59,7 +58,7 @@ darts = { version = "0.1", features = ["searcher"] }
 ## To Rebuild Dictionary
 
 ```bash
-# It would take minutes, be patient. 
+# It would take minutes, be patient.
 time cargo test -- --nocapture --ignored test_dat_basic
 ```
 
@@ -79,4 +78,3 @@ This work is released under the MIT license. A copy of the license is provided i
 - [DoubleArrayTrie和AhoCorasickDoubleArrayTrie的实用性对比](http://www.hankcs.com/program/algorithm/double-array-trie-vs-aho-corasick-double-array-trie.html)
 - [Darts: Double-Array Trie System](http://chasen.org/~taku/software/darts/)
 - [An Implementation of Double-Array Trie](https://linux.thai.net/~thep/datrie/datrie.html)
-
