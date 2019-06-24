@@ -1,9 +1,58 @@
-//  FileName    : lib.rs
-//  Author      : ShuYu Wang <andelf@gmail.com>
-//  Created     : Tue Sep 13 23:37:09 2016 by ShuYu Wang
-//  Copyright   : Feather Workshop (c) 2016
-//  Description : A double array trie implementation.
-//  Time-stamp: <2016-09-13 23:38:14 andelf>
+//! Double Array Trie in Rust
+//!
+//! ## Installation
+//!
+//! Add it to your `Cargo.toml`:
+//!
+//! ```toml
+//! [dependencies]
+//! darts = "0.1"
+//! ```
+//!
+//! Then you are good to go. If you are using Rust 2015 you have to ``extern crate darts`` to your crate root as well.
+//!
+//! ## Example
+//!
+//! ```rust
+//! use std::fs::File;
+//! use darts::DoubleArrayTrie;
+//!
+//! fn main() {
+//!     let mut f = File::open("./priv/dict.big.bincode").unwrap();
+//!     let da = DoubleArrayTrie::load(&mut f).unwrap();
+//!     let string = "中华人民共和国";
+//!     let prefixes = da.common_prefix_search(string).as_ref().map(|matches| {
+//!         matches
+//!             .into_iter()
+//!             .map(|&(end_idx, v)| {
+//!                 &string[..end_idx]
+//!             })
+//!             .collect()
+//!     }).unwrap_or(vec![]);
+//!     assert_eq!(vec!["中", "中华", "中华人民", "中华人民共和国"], prefixes);
+//! }
+//! ```
+//!
+//! ```rust
+//! use std::fs::File;
+//! use darts::DoubleArrayTrie;
+//!
+//! fn main() {
+//!     let mut f = File::open("./priv/dict.big.bincode").unwrap();
+//!     let da = DoubleArrayTrie::load(&mut f).unwrap();
+//!     assert!(da.exact_match_search("东湖高新技术开发区").is_some());
+//! }
+//! ```
+//!
+//! ## Enabling Additional Features
+//!
+//! * `searcher` feature enables searcher for maximum forward matcher
+//!
+//! ```toml
+//! [dependencies]
+//! darts = { version = "0.1", features = ["searcher"] }
+//! ```
+//!
 
 #![cfg_attr(feature = "dev", plugin(clippy))]
 
@@ -13,6 +62,7 @@ extern crate serde;
 #[cfg(any(feature = "searcher"))]
 pub mod searcher;
 
+use std::cmp;
 use std::error;
 use std::fmt;
 use std::io;
@@ -58,15 +108,6 @@ impl From<io::Error> for DartsError {
 impl From<Box<bincode::ErrorKind>> for DartsError {
     fn from(err: Box<bincode::ErrorKind>) -> Self {
         DartsError::Serialize(err)
-    }
-}
-
-#[inline]
-fn max<T: PartialOrd + Copy>(a: T, b: T) -> T {
-    if a > b {
-        a
-    } else {
-        b
     }
 }
 
@@ -223,7 +264,7 @@ impl<'a> DoubleArrayTrieBuilder<'a> {
         assert!(!siblings.is_empty());
 
         let mut begin: usize;
-        let mut pos = max(siblings[0].code + 1, self.next_check_pos) - 1;
+        let mut pos = cmp::max(siblings[0].code + 1, self.next_check_pos) - 1;
         let mut nonzero_num = 0; // the number of slots in check that already been taken
         let mut first = 0; // the flag to mark if we have run into the first time for the condition of "check[pos] == 0"
         let key_size = self.keys.len();
@@ -252,7 +293,7 @@ impl<'a> DoubleArrayTrieBuilder<'a> {
             begin = pos - siblings[0].code;
 
             if self.alloc_size <= begin + siblings.last().map(|n| n.code).unwrap() {
-                let l = (self.alloc_size as f32) * max(1.05, key_size as f32 / (self.progress as f32 + 1.0));
+                let l = self.alloc_size * cmp::max(105, (key_size * 100) / (self.progress + 1)) / 100;
                 self.resize(l as usize)
             }
 
@@ -279,7 +320,7 @@ impl<'a> DoubleArrayTrieBuilder<'a> {
         }
 
         self.used[begin] = true;
-        self.size = max(self.size, begin + siblings.last().map(|n| n.code).unwrap() + 1);
+        self.size = cmp::max(self.size, begin + siblings.last().map(|n| n.code).unwrap() + 1);
 
         // mark the ownership of these cells
         siblings
