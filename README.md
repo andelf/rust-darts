@@ -2,6 +2,11 @@
 
 This library is in alpha state, PRs are welcomed. An optional Forward Maximum Matching Searcher is provided when enabled by features.
 
+[![Build Status](https://travis-ci.org/andelf/rust-darts.svg?branch=master)](https://travis-ci.org/andelf/rust-darts)
+[![codecov](https://codecov.io/gh/andelf/rust-darts/branch/master/graph/badge.svg)](https://codecov.io/gh/andelf/rust-darts)
+[![Crates.io](https://img.shields.io/crates/v/darts.svg)](https://crates.io/crates/darts)
+[![docs.rs](https://docs.rs/darts/badge.svg)](https://docs.rs/darts/)
+
 ## Installation
 
 Add it to your `Cargo.toml`:
