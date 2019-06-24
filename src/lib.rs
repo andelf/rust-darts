@@ -1,9 +1,58 @@
-//  FileName    : lib.rs
-//  Author      : ShuYu Wang <andelf@gmail.com>
-//  Created     : Tue Sep 13 23:37:09 2016 by ShuYu Wang
-//  Copyright   : Feather Workshop (c) 2016
-//  Description : A double array trie implementation.
-//  Time-stamp: <2016-09-13 23:38:14 andelf>
+//! Double Array Trie in Rust
+//!
+//! ## Installation
+//!
+//! Add it to your `Cargo.toml`:
+//!
+//! ```toml
+//! [dependencies]
+//! darts = "0.1"
+//! ```
+//!
+//! Then you are good to go. If you are using Rust 2015 you have to ``extern crate darts`` to your crate root as well.
+//!
+//! ## Example
+//!
+//! ```rust
+//! use std::fs::File;
+//! use darts::DoubleArrayTrie;
+//!
+//! fn main() {
+//!     let mut f = File::open("./priv/dict.big.bincode").unwrap();
+//!     let da = DoubleArrayTrie::load(&mut f).unwrap();
+//!     let string = "中华人民共和国";
+//!     let prefixes = da.common_prefix_search(string).as_ref().map(|matches| {
+//!         matches
+//!             .into_iter()
+//!             .map(|&(end_idx, v)| {
+//!                 &string[..end_idx]
+//!             })
+//!             .collect()
+//!     }).unwrap_or(vec![]);
+//!     assert_eq!(vec!["中", "中华", "中华人民", "中华人民共和国"], prefixes);
+//! }
+//! ```
+//!
+//! ```rust
+//! use std::fs::File;
+//! use darts::DoubleArrayTrie;
+//!
+//! fn main() {
+//!     let mut f = File::open("./priv/dict.big.bincode").unwrap();
+//!     let da = DoubleArrayTrie::load(&mut f).unwrap();
+//!     assert!(da.exact_match_search("东湖高新技术开发区").is_some());
+//! }
+//! ```
+//!
+//! ## Enabling Additional Features
+//!
+//! * `searcher` feature enables searcher for maximum forward matcher
+//!
+//! ```toml
+//! [dependencies]
+//! darts = { version = "0.1", features = ["searcher"] }
+//! ```
+//!
 
 #![cfg_attr(feature = "dev", plugin(clippy))]
 
