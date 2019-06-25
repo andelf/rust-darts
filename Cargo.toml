@@ -2,13 +2,21 @@
 name = "darts"
 description = "A double array trie, A Forward Maximum Matching Searcher."
 repository = "https://github.com/andelf/rust-darts"
+documentation = "https://docs.rs/darts"
 version = "0.1.0"
 license = "MIT"
-authors = ["andelf <andelf@gmail.com>"]
+authors = ["andelf <andelf@gmail.com>",
+           "Paul Meng <me@paulme.ng>",
+           "messense <messense@icloud.com>"]
 readme = "README.md"
-keywords = ["trie", "darts"]
-categories = ["encoding"]
+keywords = ["trie", "darts", "string", "search", "text"]
+categories = ["data-structures", "text-processing"]
 edition = "2018"
+exclude = ["/benches/**", "/priv/**", "/.travis.yml"]
+
+[badges]
+travis-ci = { repository = "andelf/rust-darts" }
+codecov = { repository = "andelf/rust-darts" }
 
 [dependencies]
 bincode = { version = "1.1", optional = true }
@@ -16,7 +24,7 @@ serde = { version = "1.0", features = ["derive"], optional = true }
 
 [dev-dependencies]
 criterion = "0.2"
-lazy_static = "1.0"
+lazy_static = "1.3"
 hashbrown = "0.5.0"
 
 [[bench]]
