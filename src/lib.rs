@@ -352,6 +352,65 @@ impl<'a> DoubleArrayTrieBuilder<'a> {
     }
 }
 
+pub struct PrefixIter<'a> {
+    key_len: usize,
+    da: &'a DoubleArrayTrie,
+    char_indices: str::CharIndices<'a>,
+    b: i32,
+    n: i32,
+    p: usize,
+    reach_leaf: bool,
+    longest_word_len: usize,
+}
+
+impl<'a> Iterator for PrefixIter<'a> {
+    type Item = (usize, usize);
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (0, Some(self.longest_word_len))
+    }
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.reach_leaf {
+            return None;
+        }
+
+        while let Some((i, c)) = self.char_indices.next() {
+            self.p = self.b as usize;
+            self.n = self.da.base[self.p];
+
+            if self.b == self.da.check[self.p] as i32 && self.n < 0 {
+                self.p = self.b as usize + c as usize + 1;
+                if self.b == self.da.check[self.p] as i32 {
+                    self.b = self.da.base[self.p];
+                } else {
+                    self.reach_leaf = true;
+                }
+
+                return Some((i, (-self.n - 1) as usize));
+            }
+
+            self.p = self.b as usize + c as usize + 1;
+            if self.b == self.da.check[self.p] as i32 {
+                self.b = self.da.base[self.p];
+            } else {
+                return None;
+            };
+        }
+
+        self.p = self.b as usize;
+        self.n = self.da.base[self.p];
+
+        if self.b == self.da.check[self.p] as i32 && self.n < 0 {
+            self.reach_leaf = true;
+            return Some((self.key_len, (-self.n - 1) as usize));
+        } else {
+            self.reach_leaf = true;
+            return None;
+        }
+    }
+}
+
 /// A Double Array Trie.
 #[derive(Serialize, Deserialize, Debug)]
 pub struct DoubleArrayTrie {
@@ -386,43 +445,25 @@ impl DoubleArrayTrie {
         }
     }
 
+    /// Iterate thorough all of the matched prefixes. Returning an iterator.
+    pub fn common_prefix_iter<'a>(&'a self, key: &'a str) -> PrefixIter<'a> {
+        let key_len = key.len();
+
+        PrefixIter {
+            key_len: key_len,
+            da: self,
+            char_indices: key.char_indices(),
+            b: self.base[0],
+            p: 0,
+            n: 0,
+            reach_leaf: false,
+            longest_word_len: self.longest_word_len,
+        }
+    }
+
     /// Find all matched prefixes. Returns [(end_index, value)].
     pub fn common_prefix_search(&self, key: &str) -> Option<Vec<(usize, usize)>> {
-        // Reserve the capacity to speed up the performance,
-        // the longest prefix is at most the longest word in the dictionary,
-        // and suppose each iteration matches a prefix,
-        // there should be <longest_word_len> number of prefixes matched.
-        let mut result = Vec::with_capacity(self.longest_word_len);
-
-        let mut b = self.base[0];
-        let mut n;
-        let mut p: usize;
-
-        for (i, c) in key.char_indices() {
-            p = b as usize;
-            n = self.base[p];
-
-            if b == self.check[p] as i32 && n < 0 {
-                result.push((i, (-n - 1) as usize))
-            }
-
-            p = b as usize + c as usize + 1;
-            if b == self.check[p] as i32 {
-                b = self.base[p];
-            } else {
-                return if result.is_empty() { None } else { Some(result) };
-            }
-        }
-
-        p = b as usize;
-        n = self.base[p];
-
-        if b == self.check[p] as i32 && n < 0 {
-            result.push((key.len(), (-n - 1) as usize));
-            Some(result)
-        } else {
-            None
-        }
+        self.common_prefix_iter(key).map(|x| Some(x)).collect()
     }
 
     /// Save DAT to an output stream.
@@ -475,15 +516,43 @@ mod tests {
         let mut f = File::open("./priv/dict.big.bincode").unwrap();
         let da = DoubleArrayTrie::load(&mut f).unwrap();
 
-        let string = "中华人民共和国";
-        da.common_prefix_search(string).as_ref().map(|matches| {
-            matches
-                .iter()
-                .map(|&(end_idx, v)| {
-                    println!("prefix[{}] = {}", &string[..end_idx], v);
-                })
-                .last()
-        });
+        let input1 = "中华人民共和国";
+        let result1: Vec<&str> = da
+            .common_prefix_search(input1)
+            .unwrap()
+            .iter()
+            .map(|&(end_idx, _)| &input1[..end_idx])
+            .collect();
+        assert_eq!(result1, vec!["中", "中华", "中华人民", "中华人民共和国"]);
+
+        let input2 = "网球拍卖会";
+        let result2: Vec<&str> = da
+            .common_prefix_search(input2)
+            .unwrap()
+            .iter()
+            .map(|&(end_idx, _)| &input2[..end_idx])
+            .collect();
+        assert_eq!(result2, vec!["网", "网球", "网球拍"]);
+    }
+
+    #[test]
+    fn test_dat_prefix_iter() {
+        let mut f = File::open("./priv/dict.big.bincode").unwrap();
+        let da = DoubleArrayTrie::load(&mut f).unwrap();
+
+        let input1 = "中华人民共和国";
+        let result1: Vec<&str> = da
+            .common_prefix_iter(input1)
+            .map(|(end_idx, _)| &input1[..end_idx])
+            .collect();
+        assert_eq!(result1, vec!["中", "中华", "中华人民", "中华人民共和国"]);
+
+        let input2 = "网球拍卖会";
+        let result2: Vec<&str> = da
+            .common_prefix_iter(input2)
+            .map(|(end_idx, _)| &input2[..end_idx])
+            .collect();
+        assert_eq!(result2, vec!["网", "网球", "网球拍"]);
     }
 
     #[test]
