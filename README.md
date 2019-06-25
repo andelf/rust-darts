@@ -70,7 +70,7 @@ time cargo test -- --nocapture --ignored test_dat_basic
 
 ## To run benchmark tests
 ```bash
-cargo bench --all-features -- --nocapture
+cargo bench --all-features
 ```
 
 ## License
