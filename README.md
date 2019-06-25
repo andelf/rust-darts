@@ -54,10 +54,11 @@ fn main() {
 ## Enabling Additional Features
 
 * `searcher` feature enables searcher for maximum forward matcher
+* `serialization` feature enables saving and loading serialized `DoubleArrayTrie` data
 
 ```toml
 [dependencies]
-darts = { version = "0.1", features = ["searcher"] }
+darts = { version = "0.1", features = ["searcher", "serialization"] }
 ```
 
 ## To Rebuild Dictionary
@@ -69,7 +70,7 @@ time cargo test -- --nocapture --ignored test_dat_basic
 
 ## To run benchmark tests
 ```bash
-cargo bench -- --nocapture
+cargo bench --all-features
 ```
 
 ## License

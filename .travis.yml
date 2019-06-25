@@ -23,7 +23,8 @@ before_script:
 script:
   - cargo fmt --all -- --check
   - cargo build
-  - cargo build --features searcher 
+  - cargo build --features searcher
+  - cargo build --features serialization
   - cargo build --all-features
   - cargo test --all-features
   - |

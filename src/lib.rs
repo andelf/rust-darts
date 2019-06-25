@@ -47,36 +47,39 @@
 //! ## Enabling Additional Features
 //!
 //! * `searcher` feature enables searcher for maximum forward matcher
+//! * `serialization` feature enables saving and loading serialized `DoubleArrayTrie` data
 //!
 //! ```toml
 //! [dependencies]
-//! darts = { version = "0.1", features = ["searcher"] }
+//! darts = { version = "0.1", features = ["searcher", "serialization"] }
 //! ```
 //!
-
-#![cfg_attr(feature = "dev", plugin(clippy))]
-
+#[cfg(feature = "serialization")]
 extern crate bincode;
+#[cfg(feature = "serialization")]
 extern crate serde;
 
-#[cfg(any(feature = "searcher"))]
+#[cfg(feature = "searcher")]
 pub mod searcher;
 
 use std::cmp;
 use std::error;
 use std::fmt;
 use std::io;
+#[cfg(feature = "serialization")]
 use std::io::prelude::*;
 use std::iter;
 use std::result;
 use std::str;
 use std::vec;
 
+#[cfg(feature = "serialization")]
 use serde::{Deserialize, Serialize};
 
 /// The error type which is used in this crate.
 #[derive(Debug)]
 pub enum DartsError {
+    #[cfg(feature = "serialization")]
     Serialize(Box<bincode::ErrorKind>),
     Io(io::Error),
 }
@@ -90,6 +93,7 @@ impl fmt::Display for DartsError {
 impl error::Error for DartsError {
     fn description(&self) -> &str {
         match *self {
+            #[cfg(feature = "serialization")]
             DartsError::Serialize(ref err) => err.description(),
             DartsError::Io(ref err) => err.description(),
         }
@@ -105,6 +109,7 @@ impl From<io::Error> for DartsError {
     }
 }
 
+#[cfg(feature = "serialization")]
 impl From<Box<bincode::ErrorKind>> for DartsError {
     fn from(err: Box<bincode::ErrorKind>) -> Self {
         DartsError::Serialize(err)
@@ -412,7 +417,8 @@ impl<'a> Iterator for PrefixIter<'a> {
 }
 
 /// A Double Array Trie.
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Debug)]
+#[cfg_attr(feature = "serialization", derive(Serialize, Deserialize))]
 pub struct DoubleArrayTrie {
     base: Vec<i32>, // use negetive to indicate ends
     check: Vec<u32>,
@@ -467,12 +473,14 @@ impl DoubleArrayTrie {
     }
 
     /// Save DAT to an output stream.
+    #[cfg(feature = "serialization")]
     pub fn save<W: Write>(&self, w: &mut W) -> Result<()> {
         let encoded: Vec<u8> = bincode::serialize(self)?;
         w.write_all(&encoded).map_err(From::from)
     }
 
     /// Load DAT from input stream.
+    #[cfg(feature = "serialization")]
     pub fn load<R: Read>(r: &mut R) -> Result<Self> {
         let mut buf = Vec::new();
         r.read_to_end(&mut buf)?;
@@ -483,9 +491,10 @@ impl DoubleArrayTrie {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs::File;
-    use std::io::BufReader;
+    #[cfg(feature = "serialization")]
+    use std::{fs::File, io::BufReader};
 
+    #[cfg(feature = "serialization")]
     #[test]
     #[ignore]
     fn test_dat_basic() {
@@ -511,6 +520,7 @@ mod tests {
             .expect("write ok!");
     }
 
+    #[cfg(feature = "serialization")]
     #[test]
     fn test_dat_exact_match_search() {
         let mut f = File::open("./priv/dict.big.bincode").unwrap();
@@ -555,6 +565,7 @@ mod tests {
         assert_eq!(result2, vec!["网", "网球", "网球拍"]);
     }
 
+    #[cfg(feature = "serialization")]
     #[test]
     fn test_dat_prefix_search() {
         let mut f = File::open("./priv/dict.big.bincode").unwrap();
