@@ -1,7 +1,7 @@
 use crate::DoubleArrayTrie;
 
 impl DoubleArrayTrie {
-    /// Run Forward Maximum Matching Method on a string. Returns a Searcher.
+    /// Run Forward Maximum Matching Method on a string. Returns a Searcher iterator.
     pub fn search<'a, 'b>(&'b self, haystack: &'a str) -> DoubleArrayTrieSearcher<'a, 'b> {
         DoubleArrayTrieSearcher {
             haystack,
@@ -15,7 +15,6 @@ impl DoubleArrayTrie {
 pub enum SearchStep {
     Match(usize, usize),
     Reject(usize, usize),
-    Done,
 }
 
 /// A seracher for all words in Double Array Trie, using Forward Maximum Matching Method.
@@ -26,23 +25,10 @@ pub struct DoubleArrayTrieSearcher<'a, 'b> {
     start_pos: usize,
 }
 
-impl<'a, 'b> DoubleArrayTrieSearcher<'a, 'b> {
-    pub fn search_step_to_str(&self, step: &SearchStep) -> String {
-        match *step {
-            SearchStep::Match(start, end) => format!("{}/n", &self.haystack()[start..end]),
-            SearchStep::Reject(start, end) => format!("{}/x", &self.haystack()[start..end]),
-            _ => "/#".into(),
-        }
-    }
-}
+impl<'a, 'b> Iterator for DoubleArrayTrieSearcher<'a, 'b> {
+    type Item = SearchStep;
 
-impl<'a, 'b> DoubleArrayTrieSearcher<'a, 'b> {
-    pub fn haystack(&self) -> &'a str {
-        self.haystack
-    }
-
-    #[allow(dead_code)]
-    pub fn next(&mut self) -> SearchStep {
+    fn next(&mut self) -> Option<SearchStep> {
         let base = &self.dat.base;
         let check = &self.dat.check;
 
@@ -56,7 +42,7 @@ impl<'a, 'b> DoubleArrayTrieSearcher<'a, 'b> {
         let mut result = None;
 
         if start_pos >= self.haystack.len() {
-            return SearchStep::Done;
+            return None;
         }
 
         for (i, c) in self.haystack[start_pos..].char_indices() {
@@ -74,10 +60,10 @@ impl<'a, 'b> DoubleArrayTrieSearcher<'a, 'b> {
             } else if result.is_some() {
                 // last item is the maximum matching
                 self.start_pos = next_pos;
-                return result.unwrap();
+                return result;
             } else {
                 self.start_pos = start_pos + i + c.len_utf8();
-                return SearchStep::Reject(start_pos, self.start_pos);
+                return Some(SearchStep::Reject(start_pos, self.start_pos));
             }
         }
 
@@ -87,9 +73,9 @@ impl<'a, 'b> DoubleArrayTrieSearcher<'a, 'b> {
         // full match from start to end
         self.start_pos = self.haystack.len();
         if b == check[p] as i32 && n < 0 {
-            SearchStep::Match(start_pos, self.start_pos)
+            Some(SearchStep::Match(start_pos, self.start_pos))
         } else {
-            SearchStep::Reject(start_pos, self.start_pos)
+            Some(SearchStep::Reject(start_pos, self.start_pos))
         }
     }
 }
@@ -99,25 +85,22 @@ mod tests {
     use super::*;
     use std::fs::File;
 
+    fn search_step_to_str(step: &SearchStep, haystack: &str) -> String {
+        match *step {
+            SearchStep::Match(start, end) => format!("{}/n", &haystack[start..end]),
+            SearchStep::Reject(start, end) => format!("{}/x", &haystack[start..end]),
+        }
+    }
+
     #[test]
     fn test_dat_searcher() {
         let mut f = File::open("./priv/dict.big.bincode").unwrap();
         let da = DoubleArrayTrie::load(&mut f).unwrap();
 
         let text = "江西鄱阳湖干枯，中国最大淡水湖变成大草原";
-        let mut searcher = da.search(&text);
-        let mut result = vec![];
-        loop {
-            let step = searcher.next();
-            // println!("{:?}\t{}", step, searcher.search_step_to_str(&step));
-            if step == SearchStep::Done {
-                break;
-            }
-            result.push(step);
-        }
-        let segmented = result
-            .iter()
-            .map(|s| searcher.search_step_to_str(s))
+        let segmented = da
+            .search(&text)
+            .map(|s| search_step_to_str(&s, text))
             .collect::<Vec<String>>()
             .join(" ");
         assert_eq!(
