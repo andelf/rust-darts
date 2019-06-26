@@ -408,10 +408,10 @@ impl<'a> Iterator for PrefixIter<'a> {
 
         if self.b == self.da.check[self.p] as i32 && self.n < 0 {
             self.reach_leaf = true;
-            return Some((self.key_len, (-self.n - 1) as usize));
+            Some((self.key_len, (-self.n - 1) as usize))
         } else {
             self.reach_leaf = true;
-            return None;
+            None
         }
     }
 }
@@ -456,7 +456,7 @@ impl DoubleArrayTrie {
         let key_len = key.len();
 
         PrefixIter {
-            key_len: key_len,
+            key_len,
             da: self,
             char_indices: key.char_indices(),
             b: self.base[0],
@@ -469,7 +469,7 @@ impl DoubleArrayTrie {
 
     /// Find all matched prefixes. Returns [(end_index, value)].
     pub fn common_prefix_search(&self, key: &str) -> Option<Vec<(usize, usize)>> {
-        self.common_prefix_iter(key).map(|x| Some(x)).collect()
+        self.common_prefix_iter(key).map(Some).collect()
     }
 
     /// Save DAT to an output stream.
