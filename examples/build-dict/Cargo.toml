@@ -1,0 +1,8 @@
+[package]
+name = "build-dict"
+version = "0.1.0"
+authors = ["Paul Meng <me@paulme.ng>"]
+edition = "2018"
+
+[dependencies]
+darts = { path = "../../" } 
