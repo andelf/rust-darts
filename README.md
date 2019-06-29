@@ -65,7 +65,7 @@ darts = { version = "0.1", features = ["searcher", "serialization"] }
 
 ```bash
 # It would take minutes, be patient.
-time cargo test -- --nocapture --ignored test_dat_basic
+time cargo test --all-features -- --nocapture --ignored test_dat_basic
 ```
 
 ## To run benchmark tests
