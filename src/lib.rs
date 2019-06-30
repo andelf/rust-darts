@@ -125,7 +125,7 @@ struct Node {
 
 /// Build a Double Arrary Trie from a series of strings.
 pub struct DoubleArrayTrieBuilder<'a> {
-    check: Vec<u32>,
+    check: Vec<i32>,
     base: Vec<i32>,
     used: Vec<bool>,
 
@@ -184,7 +184,7 @@ impl<'a> DoubleArrayTrieBuilder<'a> {
             depth: 0,
         };
 
-        let mut siblings = Vec::new();
+        let mut siblings = Vec::with_capacity(keys.len() / 100);
         self.fetch(&root_node, &mut siblings);
         self.insert(&siblings);
 
@@ -269,6 +269,7 @@ impl<'a> DoubleArrayTrieBuilder<'a> {
 
         let mut begin: usize;
         let mut pos = cmp::max(siblings[0].code + 1, self.next_check_pos) - 1;
+        let mut last_free = 0;
         let mut nonzero_num = 0; // the number of slots in check that already been taken
         let mut first = 0; // the flag to mark if we have run into the first time for the condition of "check[pos] == 0"
         let key_size = self.keys.len();
@@ -285,11 +286,15 @@ impl<'a> DoubleArrayTrieBuilder<'a> {
             }
 
             // iterate through the slot that already has an owner
-            if self.check[pos] != 0 {
+            if self.check[pos] > 0 {
                 nonzero_num += 1;
+                continue;
+            } else if self.check[pos] < 0 {
+                pos = (-self.check[pos] - 1) as usize;
                 continue;
             } else if first == 0 {
                 self.next_check_pos = pos; // remember the slot so the next time we call `insert` we could save some time for searching
+                last_free = pos;
                 first = 1;
             }
 
@@ -303,12 +308,20 @@ impl<'a> DoubleArrayTrieBuilder<'a> {
 
             // then we check if the `begin` is already taken
             if self.used[begin] {
+                if last_free < pos {
+                    self.check[last_free] = -(pos as i32);
+                }
+
                 continue;
             }
 
             // check if any of the slots where we should put the code are taken.
             for n in siblings.iter() {
-                if self.check[begin + n.code] != 0 {
+                if self.check[begin + n.code] > 0 {
+                    if last_free < pos {
+                        self.check[last_free] = -(pos as i32);
+                    }
+
                     continue 'outer;
                 }
             }
@@ -329,12 +342,13 @@ impl<'a> DoubleArrayTrieBuilder<'a> {
         // mark the ownership of these cells
         siblings
             .iter()
-            .map(|n| self.check[begin + n.code] = begin as u32)
+            .map(|n| self.check[begin + n.code] = begin as i32)
             .last();
 
         // recursively call `fetch` and `insert` for this level of the nodes
         for sibling in siblings.iter() {
-            let mut new_siblings = Vec::new();
+            let heuristic_capacity = (sibling.right - sibling.left) / (100 / std::cmp::min(sibling.depth * 10, 100));
+            let mut new_siblings = Vec::with_capacity(heuristic_capacity);
 
             // a string without any children, then it means we reach a leaf node.
             if self.fetch(sibling, &mut new_siblings) == 0 {
@@ -421,7 +435,7 @@ impl<'a> Iterator for PrefixIter<'a> {
 #[cfg_attr(feature = "serialization", derive(Serialize, Deserialize))]
 pub struct DoubleArrayTrie {
     base: Vec<i32>, // use negetive to indicate ends
-    check: Vec<u32>,
+    check: Vec<i32>,
     longest_word_len: usize,
 }
 
