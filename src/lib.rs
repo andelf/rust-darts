@@ -486,6 +486,27 @@ impl DoubleArrayTrie {
         self.common_prefix_iter(key).map(Some).collect()
     }
 
+    pub fn delete(&mut self, key: &str) {
+        let mut b = self.base[0];
+        let mut p: usize;
+
+        for c in key.chars() {
+            p = (b + c as i32 + 1) as usize;
+
+            if b == self.check[p] as i32 {
+                b = self.base[p];
+            }
+        }
+
+        p = b as usize;
+        let n = self.base[p];
+
+        if b == self.check[p] as i32 && n < 0 {
+            self.check[p] = 0;
+            self.base[p] = 0;
+        }
+    }
+
     /// Save DAT to an output stream.
     #[cfg(feature = "serialization")]
     pub fn save<W: Write>(&self, w: &mut W) -> Result<()> {
@@ -592,5 +613,57 @@ mod tests {
         let strs: Vec<&str> = vec!["a", "ab", "abc"];
         let da = DoubleArrayTrieBuilder::new().build(&strs);
         assert!(da.exact_match_search("abc").is_some());
+    }
+
+    #[test]
+    fn test_dat_delete() {
+        let strs: Vec<&str> = vec!["a", "ab", "abc"];
+        let mut da = DoubleArrayTrieBuilder::new().build(&strs);
+        assert!(da.exact_match_search("abc").is_some());
+
+        da.delete("abc");
+        assert!(da.exact_match_search("abc").is_none());
+        assert!(da.exact_match_search("ab").is_some());
+        assert!(da.exact_match_search("a").is_some());
+
+        da.delete("ab");
+        assert!(da.exact_match_search("ab").is_none());
+        assert!(da.exact_match_search("a").is_some());
+
+        da.delete("a");
+        assert!(da.exact_match_search("a").is_none());
+
+        let strs: Vec<&str> = vec!["中", "中华", "中华人民", "中华人民共和国"];
+        let mut da = DoubleArrayTrieBuilder::new().build(&strs);
+
+        let input1 = "中华人民共和国";
+        let result1: Vec<&str> = da
+            .common_prefix_iter(input1)
+            .map(|(end_idx, _)| &input1[..end_idx])
+            .collect();
+        assert_eq!(result1, vec!["中", "中华", "中华人民", "中华人民共和国"]);
+
+        da.delete("中华人民");
+
+        let result1: Vec<&str> = da
+            .common_prefix_iter(input1)
+            .map(|(end_idx, _)| &input1[..end_idx])
+            .collect();
+        assert_eq!(result1, vec!["中", "中华", "中华人民共和国"]);
+
+        da.delete("中华");
+
+        let result1: Vec<&str> = da
+            .common_prefix_iter(input1)
+            .map(|(end_idx, _)| &input1[..end_idx])
+            .collect();
+        assert_eq!(result1, vec!["中", "中华人民共和国"]);
+
+        da.delete("中华人民共和国");
+        let result1: Vec<&str> = da
+            .common_prefix_iter(input1)
+            .map(|(end_idx, _)| &input1[..end_idx])
+            .collect();
+        assert_eq!(result1, vec!["中"]);
     }
 }
