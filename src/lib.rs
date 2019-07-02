@@ -495,6 +495,8 @@ impl DoubleArrayTrie {
 
             if b == self.check[p] as i32 {
                 b = self.base[p];
+            } else {
+                return;
             }
         }
 
@@ -505,6 +507,141 @@ impl DoubleArrayTrie {
             self.check[p] = 0;
             self.base[p] = 0;
         }
+    }
+
+    pub fn insert(&mut self, key: &str, word_id: i32) {
+        let mut b = self.base[0];
+        let mut p: usize;
+
+        let mut iter = key.chars().peekable();
+        while let Some(c) = iter.next() {
+            p = (b + c as i32 + 1) as usize;
+
+            if b == self.check[p] as i32 {
+                b = self.base[p];
+            } else if self.check[p] <= 0 {
+                // it's a free slot
+                if let Some(&next_c) = iter.peek() {
+                    let mut siblings: Vec<usize> = vec![(next_c as usize) + 1];
+                    self.base[p] = self.look_for_free_slot(p, &mut siblings) as i32;
+                    self.check[p] = b as i32;
+                    b = self.base[p];
+                } else {
+                    let mut siblings: Vec<usize> = vec![1];
+                    self.base[p] = self.look_for_free_slot(p, &mut siblings) as i32;
+                    self.check[p] = b as i32;
+
+                    let new_base = self.base[p] as usize;
+                    self.base[new_base] = -word_id - 1;
+                    self.check[new_base] = new_base as i32;
+                }
+            } else {
+                let mut siblings: Vec<usize> = vec![];
+                self.fetch(b as usize, &mut siblings);
+
+                // it's a conflict, we need to move the node
+                let new_base = self.look_for_free_slot(b as usize, &siblings);
+
+                // TODO: compare the size and choose the smaller one to move
+                self.relocate(b as usize, new_base, &siblings);
+
+                if let Some(&next_c) = iter.peek() {
+                    let mut siblings: Vec<usize> = vec![(next_c as usize) + 1];
+                    self.base[p] = self.look_for_free_slot(p, &mut siblings) as i32;
+                    self.check[p] = b as i32;
+                    b = self.base[p];
+                } else {
+                    let mut siblings: Vec<usize> = vec![1];
+                    self.base[p] = self.look_for_free_slot(p, &mut siblings) as i32;
+                    self.check[p] = b as i32;
+
+                    let new_base = self.base[p] as usize;
+                    self.base[new_base] = -word_id - 1;
+                    self.check[new_base] = new_base as i32;
+                }
+            }
+        }
+    }
+
+    /// Resize all of the arrays we need
+    fn resize(&mut self, new_len: usize) {
+        self.check.resize(new_len, 0);
+        self.base.resize(new_len, 0);
+    }
+
+    fn fetch(&mut self, s: usize, siblings: &mut Vec<usize>) {
+        let upper_bound = std::cmp::min(std::char::MAX as usize, self.check.len() - (self.base[s] as usize) - 1);
+        for c in 1..=upper_bound {
+            if (self.check[(self.base[s] as usize) + c] as usize) == s {
+                siblings.push(c);
+            }
+        }
+    }
+
+    fn look_for_free_slot(&mut self, s: usize, siblings: &[usize]) -> usize {
+        let mut begin: usize;
+        let mut pos = s + siblings[0];
+        let mut last_free = 0;
+        let mut first = 0; // the flag to mark if we have run into the first time for the condition of "check[pos] == 0"
+
+        'outer: loop {
+            pos += 1;
+
+            if self.base.len() <= pos {
+                self.resize(pos + 1);
+            }
+
+            // iterate through the slot that already has an owner
+            if self.check[pos] > 0 {
+                continue;
+            } else if self.check[pos] < 0 {
+                pos = (-self.check[pos] - 1) as usize;
+                continue;
+            } else if first == 0 {
+                last_free = pos;
+                first = 1;
+            }
+
+            // derive the `begin` in reverse, substract the code from `pos`
+            begin = pos - siblings[0];
+
+            // check if any of the slots where we should put the code are taken.
+            for n in siblings.iter() {
+                if self.check[begin + n] > 0 {
+                    if last_free < pos {
+                        self.check[last_free] = -(pos as i32);
+                    }
+
+                    continue 'outer;
+                }
+            }
+
+            // all are available, break out the loop.
+            return pos;
+        }
+    }
+
+    fn relocate(&mut self, s: usize, new_base: usize, siblings: &Vec<usize>) {
+        for c in siblings.iter() {
+            if (self.check[(self.base[s] as usize) + c] as usize) == s {
+                self.check[new_base + c] = s as i32;
+                self.base[new_base + c] = self.base[(self.base[s] as usize) + c];
+
+                let n = (self.base[s] as usize) + c;
+                let mut new_siblings = vec![];
+                self.fetch(n, &mut new_siblings);
+
+                for d in new_siblings.iter() {
+                    if (self.check[(self.base[n] as usize) + d] as usize) == n {
+                        self.check[(self.base[n] as usize) + d] = (new_base + c) as i32;
+                    }
+                }
+
+                self.check[(self.base[s] as usize) + c] = 0;
+            }
+        }
+
+        self.base[s] = new_base as i32;
     }
 
     /// Save DAT to an output stream.
@@ -635,13 +772,7 @@ mod tests {
 
         let strs: Vec<&str> = vec!["中", "中华", "中华人民", "中华人民共和国"];
         let mut da = DoubleArrayTrieBuilder::new().build(&strs);
-
         let input1 = "中华人民共和国";
-        let result1: Vec<&str> = da
-            .common_prefix_iter(input1)
-            .map(|(end_idx, _)| &input1[..end_idx])
-            .collect();
-        assert_eq!(result1, vec!["中", "中华", "中华人民", "中华人民共和国"]);
 
         da.delete("中华人民");
 
@@ -665,5 +796,51 @@ mod tests {
             .map(|(end_idx, _)| &input1[..end_idx])
             .collect();
         assert_eq!(result1, vec!["中"]);
+    }
+
+    #[test]
+    fn test_dat_insert() {
+        let strs: Vec<&str> = vec!["a", "ab", "abc"];
+        let mut da = DoubleArrayTrieBuilder::new().build(&strs);
+        da.insert("abcd", 3);
+
+        assert!(da.exact_match_search("a").is_some());
+        assert!(da.exact_match_search("ab").is_some());
+        assert!(da.exact_match_search("abc").is_some());
+        assert!(da.exact_match_search("abcd").is_some());
+        assert!(da.exact_match_search("abcde").is_none());
+
+        // The example from the paper: An Efficient Implementation of Trie Structures
+        let strs: Vec<&str> = vec!["a"];
+        let mut da = DoubleArrayTrieBuilder::new().build(&strs);
+        da.insert("bachelor", 1);
+        da.insert("jar", 2);
+        da.insert("badge", 3);
+        da.insert("baby", 4);
+
+        assert_eq!(da.exact_match_search("bachelor"), Some(1));
+        assert_eq!(da.exact_match_search("jar"), Some(2));
+        assert_eq!(da.exact_match_search("badge"), Some(3));
+        assert_eq!(da.exact_match_search("baby"), Some(4));
+        assert_eq!(da.exact_match_search("abcde"), None);
+
+        let strs: Vec<&str> = vec!["天"];
+        let mut da = DoubleArrayTrieBuilder::new().build(&strs);
+        da.insert("中", 1);
+        da.insert("中华", 2);
+        da.insert("中华人民", 3);
+        da.insert("中华人民共和国", 4);
+
+        assert_eq!(da.exact_match_search("中"), Some(1));
+        assert_eq!(da.exact_match_search("中华"), Some(2));
+        assert_eq!(da.exact_match_search("中华人民"), Some(3));
+        assert_eq!(da.exact_match_search("中华人民共和国"), Some(4));
+
+        let input1 = "中华人民共和国";
+        let result1: Vec<&str> = da
+            .common_prefix_iter(input1)
+            .map(|(end_idx, _)| &input1[..end_idx])
+            .collect();
+        assert_eq!(result1, vec!["中", "中华", "中华人民", "中华人民共和国"]);
     }
 }
