@@ -518,7 +518,13 @@ impl DoubleArrayTrie {
             p = (b + c as i32 + 1) as usize;
 
             if b == self.check[p] as i32 {
-                b = self.base[p];
+                if iter.peek().is_some() {
+                    b = self.base[p];
+                } else {
+                    let new_base = self.base[p] as usize;
+                    self.base[new_base] = -word_id - 1;
+                    self.check[new_base] = new_base as i32;
+                }
             } else if self.check[p] <= 0 {
                 // it's a free slot
                 if let Some(&next_c) = iter.peek() {
@@ -901,5 +907,30 @@ mod tests {
             result1,
             vec!["أ\u{064e}ب\u{0652}ج\u{064e}د\u{0650}ي\u{064e}\u{0651}ة"]
         );
+    }
+
+    #[test]
+    fn test_dat_insert_and_delete() {
+        let strs: Vec<&str> = vec!["a", "ab", "abc"];
+        let mut da = DoubleArrayTrieBuilder::new().build(&strs);
+        assert!(da.exact_match_search("abc").is_some());
+
+        da.delete("abc");
+        assert!(da.exact_match_search("abc").is_none());
+
+        da.insert("abc", 2);
+        assert_eq!(da.exact_match_search("abc"), Some(2));
+
+        da.delete("ab");
+        assert!(da.exact_match_search("ab").is_none());
+
+        da.insert("ab", 1);
+        assert_eq!(da.exact_match_search("ab"), Some(1));
+
+        da.delete("a");
+        assert!(da.exact_match_search("a").is_none());
+
+        da.insert("a", 0);
+        assert_eq!(da.exact_match_search("a"), Some(0));
     }
 }
