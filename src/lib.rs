@@ -843,4 +843,63 @@ mod tests {
             .collect();
         assert_eq!(result1, vec!["中", "中华", "中华人民", "中华人民共和国"]);
     }
+
+    #[test]
+    fn test_dat_unicode_han_sip() {
+        let strs: Vec<&str> = vec!["讥䶯䶰", "讥䶯䶰䶱䶲", "讥䶯䶰䶱䶲䶳䶴䶵𦡦"];
+        let da = DoubleArrayTrieBuilder::new().build(&strs);
+
+        let input1 = "讥䶯䶰䶱䶲䶳䶴䶵𦡦";
+        let result1: Vec<&str> = da
+            .common_prefix_iter(input1)
+            .map(|(end_idx, _)| &input1[..end_idx])
+            .collect();
+        assert_eq!(
+            result1,
+            vec!["讥䶯䶰", "讥䶯䶰䶱䶲", "讥䶯䶰䶱䶲䶳䶴䶵𦡦"]
+        );
+    }
+
+    #[test]
+    fn test_dat_unicode_grapheme_cluster() {
+        let strs: Vec<&str> = vec!["a", "abc", "abcde\u{0301}"];
+        let da = DoubleArrayTrieBuilder::new().build(&strs);
+
+        let input1 = "abcde\u{0301}\u{1100}\u{1161}\u{AC00}";
+        let result1: Vec<&str> = da
+            .common_prefix_iter(input1)
+            .map(|(end_idx, _)| &input1[..end_idx])
+            .collect();
+        assert_eq!(result1, vec!["a", "abc", "abcde\u{0301}"]);
+    }
+
+    #[test]
+    fn test_dat_unicode_japanese() {
+        let strs: Vec<&str> = vec!["アルゴリズム", "データ", "構造"];
+        let da = DoubleArrayTrieBuilder::new().build(&strs);
+
+        let input1 = "データ構造とアルゴリズム";
+        let result1: Vec<&str> = da
+            .common_prefix_iter(input1)
+            .map(|(end_idx, _)| &input1[..end_idx])
+            .collect();
+        assert_eq!(result1, vec!["データ"]);
+    }
+
+    #[test]
+    fn test_dat_unicode_arabic() {
+        // how does the unicode work for Arabic: http://zevoid.blogspot.com/2017/10/blog-post_19.html
+        let strs: Vec<&str> = vec!["أَبْجَدِيَّة", "عَرَبِيَّة"];
+        let da = DoubleArrayTrieBuilder::new().build(&strs);
+
+        let input1 = "أَبْجَدِيَّة عَرَبِيَّة";
+        let result1: Vec<&str> = da
+            .common_prefix_iter(input1)
+            .map(|(end_idx, _)| &input1[..end_idx])
+            .collect();
+        assert_eq!(
+            result1,
+            vec!["أ\u{064e}ب\u{0652}ج\u{064e}د\u{0650}ي\u{064e}\u{0651}ة"]
+        );
+    }
 }
