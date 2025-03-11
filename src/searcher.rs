@@ -14,6 +14,7 @@ impl DoubleArrayTrie {
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum SearchStep {
     Match(usize, usize),
+    Incomplete(usize, usize),
     Reject(usize, usize),
 }
 
@@ -49,13 +50,13 @@ impl<'a, 'b> Iterator for DoubleArrayTrieSearcher<'a, 'b> {
             p = b as usize;
             n = base[p];
 
-            if b == check[p] as i32 && n < 0 {
+            if b == check[p] && n < 0 {
                 next_pos = start_pos + i;
                 result = Some(SearchStep::Match(start_pos, start_pos + i));
             }
 
             p = b as usize + c as usize + 1;
-            if b == check[p] as i32 {
+            if b == check[p] {
                 b = base[p];
             } else if result.is_some() {
                 // last item is the maximum matching
@@ -72,10 +73,10 @@ impl<'a, 'b> Iterator for DoubleArrayTrieSearcher<'a, 'b> {
 
         // full match from start to end
         self.start_pos = self.haystack.len();
-        if b == check[p] as i32 && n < 0 {
+        if b == check[p] && n < 0 {
             Some(SearchStep::Match(start_pos, self.start_pos))
         } else {
-            Some(SearchStep::Reject(start_pos, self.start_pos))
+            Some(SearchStep::Incomplete(start_pos, self.start_pos))
         }
     }
 }
@@ -88,6 +89,7 @@ mod tests {
     fn search_step_to_str(step: &SearchStep, haystack: &str) -> String {
         match *step {
             SearchStep::Match(start, end) => format!("{}/n", &haystack[start..end]),
+            SearchStep::Incomplete(start, end) => format!("{}/p", &haystack[start..end]),
             SearchStep::Reject(start, end) => format!("{}/x", &haystack[start..end]),
         }
     }

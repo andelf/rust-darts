@@ -303,7 +303,7 @@ impl<'a> DoubleArrayTrieBuilder<'a> {
 
             if self.alloc_size <= begin + siblings.last().map(|n| n.code).unwrap() {
                 let l = self.alloc_size * cmp::max(105, (key_size * 100) / (self.progress + 1)) / 100;
-                self.resize(l as usize)
+                self.resize(l)
             }
 
             // then we check if the `begin` is already taken
@@ -385,10 +385,6 @@ pub struct PrefixIter<'a> {
 impl<'a> Iterator for PrefixIter<'a> {
     type Item = (usize, usize);
 
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        (0, Some(self.longest_word_len))
-    }
-
     fn next(&mut self) -> Option<Self::Item> {
         if self.reach_leaf {
             return None;
@@ -398,9 +394,9 @@ impl<'a> Iterator for PrefixIter<'a> {
             self.p = self.b as usize;
             self.n = self.da.base[self.p];
 
-            if self.b == self.da.check[self.p] as i32 && self.n < 0 {
+            if self.b == self.da.check[self.p] && self.n < 0 {
                 self.p = self.b as usize + c as usize + 1;
-                if self.b == self.da.check[self.p] as i32 {
+                if self.b == self.da.check[self.p] {
                     self.b = self.da.base[self.p];
                 } else {
                     self.reach_leaf = true;
@@ -410,7 +406,7 @@ impl<'a> Iterator for PrefixIter<'a> {
             }
 
             self.p = self.b as usize + c as usize + 1;
-            if self.b == self.da.check[self.p] as i32 {
+            if self.b == self.da.check[self.p] {
                 self.b = self.da.base[self.p];
             } else {
                 return None;
@@ -420,13 +416,17 @@ impl<'a> Iterator for PrefixIter<'a> {
         self.p = self.b as usize;
         self.n = self.da.base[self.p];
 
-        if self.b == self.da.check[self.p] as i32 && self.n < 0 {
+        if self.b == self.da.check[self.p] && self.n < 0 {
             self.reach_leaf = true;
             Some((self.key_len, (-self.n - 1) as usize))
         } else {
             self.reach_leaf = true;
             None
         }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (0, Some(self.longest_word_len))
     }
 }
 
@@ -448,7 +448,7 @@ impl DoubleArrayTrie {
         for c in key.chars() {
             p = (b + c as i32 + 1) as usize;
 
-            if b == self.check[p] as i32 {
+            if b == self.check[p] {
                 b = self.base[p];
             } else {
                 return None;
@@ -458,7 +458,7 @@ impl DoubleArrayTrie {
         p = b as usize;
         let n = self.base[p];
 
-        if b == self.check[p] as i32 && n < 0 {
+        if b == self.check[p] && n < 0 {
             Some((-n - 1) as usize)
         } else {
             None
@@ -493,7 +493,7 @@ impl DoubleArrayTrie {
         for c in key.chars() {
             p = (b + c as i32 + 1) as usize;
 
-            if b == self.check[p] as i32 {
+            if b == self.check[p] {
                 b = self.base[p];
             } else {
                 return;
@@ -503,7 +503,7 @@ impl DoubleArrayTrie {
         p = b as usize;
         let n = self.base[p];
 
-        if b == self.check[p] as i32 && n < 0 {
+        if b == self.check[p] && n < 0 {
             self.check[p] = 0;
             self.base[p] = 0;
         }
@@ -517,7 +517,7 @@ impl DoubleArrayTrie {
         while let Some(c) = iter.next() {
             p = (b + c as i32 + 1) as usize;
 
-            if b == self.check[p] as i32 {
+            if b == self.check[p] {
                 if iter.peek().is_some() {
                     b = self.base[p];
                 } else {
@@ -530,12 +530,12 @@ impl DoubleArrayTrie {
                 if let Some(&next_c) = iter.peek() {
                     let mut siblings: Vec<usize> = vec![(next_c as usize) + 1];
                     self.base[p] = self.look_for_free_slot(p, &mut siblings) as i32;
-                    self.check[p] = b as i32;
+                    self.check[p] = b;
                     b = self.base[p];
                 } else {
                     let mut siblings: Vec<usize> = vec![1];
                     self.base[p] = self.look_for_free_slot(p, &mut siblings) as i32;
-                    self.check[p] = b as i32;
+                    self.check[p] = b;
 
                     let new_base = self.base[p] as usize;
                     self.base[new_base] = -word_id - 1;
@@ -554,12 +554,12 @@ impl DoubleArrayTrie {
                 if let Some(&next_c) = iter.peek() {
                     let mut siblings: Vec<usize> = vec![(next_c as usize) + 1];
                     self.base[p] = self.look_for_free_slot(p, &mut siblings) as i32;
-                    self.check[p] = b as i32;
+                    self.check[p] = b;
                     b = self.base[p];
                 } else {
                     let mut siblings: Vec<usize> = vec![1];
                     self.base[p] = self.look_for_free_slot(p, &mut siblings) as i32;
-                    self.check[p] = b as i32;
+                    self.check[p] = b;
 
                     let new_base = self.base[p] as usize;
                     self.base[new_base] = -word_id - 1;
@@ -723,6 +723,7 @@ mod tests {
         assert_eq!(result2, vec!["网", "网球", "网球拍"]);
     }
 
+    #[cfg(feature = "serialization")]
     #[test]
     fn test_dat_prefix_iter() {
         let mut f = File::open("./priv/dict.big.bincode").unwrap();
@@ -860,10 +861,7 @@ mod tests {
             .common_prefix_iter(input1)
             .map(|(end_idx, _)| &input1[..end_idx])
             .collect();
-        assert_eq!(
-            result1,
-            vec!["讥䶯䶰", "讥䶯䶰䶱䶲", "讥䶯䶰䶱䶲䶳䶴䶵𦡦"]
-        );
+        assert_eq!(result1, vec!["讥䶯䶰", "讥䶯䶰䶱䶲", "讥䶯䶰䶱䶲䶳䶴䶵𦡦"]);
     }
 
     #[test]
@@ -903,10 +901,7 @@ mod tests {
             .common_prefix_iter(input1)
             .map(|(end_idx, _)| &input1[..end_idx])
             .collect();
-        assert_eq!(
-            result1,
-            vec!["أ\u{064e}ب\u{0652}ج\u{064e}د\u{0650}ي\u{064e}\u{0651}ة"]
-        );
+        assert_eq!(result1, vec!["أ\u{064e}ب\u{0652}ج\u{064e}د\u{0650}ي\u{064e}\u{0651}ة"]);
     }
 
     #[test]
